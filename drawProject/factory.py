@@ -1,5 +1,6 @@
 from pathlib import Path
 from flask import Flask
+from flask_jwt_extended import JWTManager
 
 from .auth.auth import auth_bp
 
@@ -13,6 +14,8 @@ def create_app(test=False):
         app.config.from_object('drawProject.config.TestConfig')
     else:
         app.config.from_object('drawProject.config.DevConfig')
+
+    jwt = JWTManager(app)
 
     app.register_blueprint(auth_bp)
 

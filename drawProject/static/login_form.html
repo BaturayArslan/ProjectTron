@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>login</title>
+</head>
+<body>
+    <form action="http://192.168.1.105:5000/auth/register" method="POST">
+        <label for="email">Email:</label><br>
+        <input  name="email"  /><br>
+
+        <label for="password">Password:</label><br>
+        <input  type='password' name="password"  /><br>
+
+      <input type="submit" value="Submit request" />
+    </form>
+
+    <script>
+      window.fbAsyncInit = function() {
+        FB.init({
+          appId      : '{your-app-id}',
+          cookie     : true,
+          xfbml      : true,
+          version    : '{api-version}'
+        });
+
+        FB.AppEvents.logPageView();
+
+      };
+
+      (function(d, s, id){
+         var js, fjs = d.getElementsByTagName(s)[0];
+         if (d.getElementById(id)) {return;}
+         js = d.createElement(s); js.id = id;
+         js.src = "https://connect.facebook.net/en_US/sdk.js";
+         fjs.parentNode.insertBefore(js, fjs);
+       }(document, 'script', 'facebook-jssdk'));
+    </script>
+</body>
+</html>
+

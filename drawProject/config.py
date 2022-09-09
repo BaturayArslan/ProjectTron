@@ -15,7 +15,8 @@ class BaseConfig:
     MONGO_URI = os.getenv('MONGO_URI')
     DEBUG = False
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=5)
-
+    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=1)
+    JWT_TOKEN_LOCATION = ['headers']
 
 class DevConfig(BaseConfig):
     DEBUG = True
@@ -25,3 +26,4 @@ class TestConfig(BaseConfig):
     DEBUG = True
     TESTING = True
     DATABASE_NAME = 'draw_test'
+    JWT_SECRET_KEY = 'safira'

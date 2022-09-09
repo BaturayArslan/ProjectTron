@@ -14,3 +14,4 @@ def test_get_db(test_app):
         assert test_db.client.options._options['connectTimeoutMS'] == 5.0
         assert test_db.client.options._options['wTimeoutMS'] == 5000
 
+        # TODO :: test if you can read and write to database

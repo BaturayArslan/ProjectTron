@@ -22,7 +22,6 @@ class LoginForm(FlaskForm):
     class Meta:
         csrf = False
 
-    username = StringField('username', [validators.DataRequired(message='Please Enter Username'),
-                                    validators.Length(min=5, max=25, message="min 5 max 25")])
+    email = StringField('email', [validators.DataRequired(message='Please Enter email')])
     password = PasswordField('password', [validators.DataRequired('Please enter a password'),
-                                          validators.Length(min=8, max=25, message="min 8 max 25")])
+                                          validators.Length(min=1, max=25, message="min 8 max 25")])

@@ -14,7 +14,7 @@ import pytest
                 "X-Forwarded-For": '94.123.218.184'
             },
             "/auth/register",
-            301
+            201
 
     ),
     (
@@ -50,4 +50,4 @@ def test_register(client, data, headers, path,expected):
     response = client.post(path, data=data, headers=headers)
     assert response.status_code == expected
 
-
+# TODO :: write test for already registered user.
