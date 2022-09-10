@@ -51,3 +51,14 @@ def test_register(client, data, headers, path,expected):
     assert response.status_code == expected
 
 # TODO :: write test for already registered user.
+
+
+
+def test_login(client):
+    data = {
+        'email': 'test@test.com',
+        'password': 'test'
+    }
+    response = client.post("/auth/login",data=data)
+
+
