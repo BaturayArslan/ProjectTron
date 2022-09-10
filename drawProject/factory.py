@@ -2,7 +2,7 @@ from pathlib import Path
 from flask import Flask
 from flask_jwt_extended import JWTManager
 
-from .auth.auth import auth_bp
+from .auth.auth import auth_bp,oauth_bp
 
 def create_app(test=False):
     APP_DIR = Path(__file__).parent
@@ -18,5 +18,6 @@ def create_app(test=False):
     jwt = JWTManager(app)
 
     app.register_blueprint(auth_bp)
+    app.register_blueprint(oauth_bp)
 
     return app

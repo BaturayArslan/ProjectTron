@@ -5,9 +5,12 @@ from flask import (
     redirect,
     url_for,
     jsonify,
-    make_response
+    make_response,
+    current_app,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
+from flask.views import MethodView
+from rauth.service import OAuth2Service
 from flask_jwt_extended import (
     create_access_token,
     create_refresh_token,
@@ -20,11 +23,29 @@ from flask_jwt_extended import (
     decode_token
 )
 import requests
+import json
 from .auth_form import RegistrationForm, LoginForm
 from .auth_token import decode_auth_token, encode_auth_token
 from drawProject import db
 
 auth_bp = Blueprint("auth", __name__, url_prefix='/auth')
+oauth_bp = Blueprint('oauth', __name__, url_prefix='/oauth')
+
+
+class OauthProvider:
+    provider = None
+
+    def __init__(self):
+        if OauthProvider.provider is None:
+            OauthProvider.provider = OAuth2Service(
+                client_id=current_app.config['FACEBOOK_CONSUMER_KEY'],
+                client_secret=current_app.config['FACEBOOK_CONSUMER_SECRET'],
+                name='facebook',
+                authorize_url='https://www.facebook.com/v14.0/dialog/oauth',
+                access_token_url='https://graph.facebook.com/v14.0/oauth/access_token',
+                base_url='https://graph.facebook.com/'
+            )
+        self.provider = OauthProvider.provider
 
 
 @auth_bp.route("/register", methods=["POST"])
@@ -101,9 +122,9 @@ def logout():
     token = get_jwt()
     try:
         if db.logout(token):
-            return jsonify({"status":"success"}),200
+            return jsonify({"status": "success"}), 200
     except Exception as e:
-        return jsonify({"status":"error","message":"Internal Error"}),500
+        return jsonify({"status": "error", "message": "Internal Error"}), 500
 
 
 @auth_bp.route("/refresh", methods=['POST'])
@@ -118,3 +139,28 @@ def refresh():
     identity = refresh_token['identity']
     accesses_token = create_access_token(identity=identity)
     return jsonify({'token': accesses_token}), 200
+
+
+@oauth_bp.route('/', methods=['GET'])
+def redirect_authorization():
+    facebook = OauthProvider().provider
+    return redirect(
+        facebook.get_authorize_url(redirect_uri=url_for("oauth.authorize",_scheme='https'))
+    )
+
+
+@oauth_bp.route("/Authorize", methods=['GET'])
+def authorize():
+    facebook = OauthProvider().provider
+
+    def decode_json(payload):
+        return json.loads(payload.decode('utf-8'))
+
+    if "code" not in request.args:
+        return None
+    oauth_session = facebook.get_auth_session(
+        data={'code': request.args['code'],
+              'redirect_uri': url_for("authorize")},
+        decoder=decode_json
+    )
+    me = oauth_session.get('me').json()
