@@ -1,4 +1,5 @@
 import pytest
+import asyncio
 from drawProject.factory import create_app
 
 @pytest.fixture
@@ -22,6 +23,12 @@ def class_app():
 @pytest.fixture(scope="class")
 def class_client(class_app):
     return class_app.test_client()
+
+@pytest.fixture(scope="class")
+def event_loop():
+    loop = asyncio.get_event_loop_policy().get_event_loop()
+    yield loop
+    loop.close()
 
 
 @pytest.fixture()

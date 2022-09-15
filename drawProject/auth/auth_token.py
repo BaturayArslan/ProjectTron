@@ -1,6 +1,6 @@
 import jwt
 import datetime
-from flask import current_app
+from quart import current_app
 
 
 def encode_auth_token(user_data):

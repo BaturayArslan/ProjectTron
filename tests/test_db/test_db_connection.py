@@ -1,12 +1,13 @@
 import pytest
+import pytest_asyncio
 import pdb
 
 from drawProject import db
 
 
-
-def test_get_db(test_app):
-    with test_app.test_request_context('/'):
+@pytest.mark.asyncio
+async def test_get_db(test_app):
+    async with test_app.test_request_context('/',method="GET"):
         test_db = db.get_db()
         assert test_db is not None
         assert test_db.name == 'draw_test'

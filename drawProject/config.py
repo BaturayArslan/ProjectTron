@@ -27,6 +27,6 @@ class TestConfig(BaseConfig):
     TESTING = True
     DATABASE_NAME = 'draw_test'
     JWT_SECRET_KEY = 'safira'
-    SERVER_NAME= 'draw.hbarslan.com'
+    #SERVER_NAME= 'draw.hbarslan.com'
     FACEBOOK_CONSUMER_KEY= os.getenv('FACEBOOK_CONSUMER_KEY')
     FACEBOOK_CONSUMER_SECRET= os.getenv('FACEBOOK_CONSUMER_SECRET')

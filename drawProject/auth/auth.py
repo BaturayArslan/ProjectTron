@@ -1,4 +1,4 @@
-from flask import (
+from quart import (
     Blueprint,
     request,
     g,
@@ -53,11 +53,12 @@ class OauthProvider:
 
 
 @auth_bp.route("/register", methods=["POST"])
-def register():
+async def register():
     try:
-        form_data = RegistrationForm(request.form)
-        if form_data.validate():
-            data = request.form.to_dict()
+        form_data = await request.form
+        data = form_data.to_dict()
+        form = RegistrationForm(form_data)
+        if form.validate():
             data['password'] = generate_password_hash(data['password'])
             # TODO :: Validate X-Forwarded-For header before go production
             try:
@@ -68,7 +69,7 @@ def register():
                 data['country'] = ''
             try:
                 data.pop('confirm')
-                db.register_user(data)
+                await db.register_user(data)
                 return jsonify({
                     "status": 'success',
                     'message': 'registered.'
@@ -87,22 +88,23 @@ def register():
 
         return jsonify({
             "status": "error",
-            "message": form_data.errors
+            "message": form.errors
         }), 400
     except Exception as e:
         return jsonify({
             "status": "error",
-            "message": "Please Try again."
+            "message": f"Please Try again.{e}"
         }), 500
 
 
 @auth_bp.route("/login", methods=["POST"])
-def login():
+async def login():
     try:
-        form_data = LoginForm(request.form)
-        if form_data.validate():
-            data = request.form.to_dict()
-            user = db.find_user(data['email'], {"_id": 1, "email": 1, "username": 1, "password": 1})
+        form_data = await request.form
+        form = LoginForm(form_data)
+        if form.validate():
+            data = form_data.to_dict()
+            user = await db.find_user(data['email'], {"_id": 1, "email": 1, "username": 1, "password": 1})
             if not check_password_hash(user['password'], data['password']):
                 return jsonify({
                     "status": "error",
@@ -114,9 +116,9 @@ def login():
             refresh_token = create_refresh_token(
                 identity=user['email']
             )
-            insert_result = db.create_login_session(refresh_token, user['email'], user['_id'])
+            insert_result = await db.create_login_session(refresh_token, user['email'], user['_id'])
 
-            return make_response(jsonify({
+            return await make_response(jsonify({
                 'status': "success",
                 'auth_token': access_token,
                 'refresh_token': refresh_token
@@ -124,7 +126,7 @@ def login():
 
         return jsonify({
             "status": "error",
-            "message": form_data.errors
+            "message": form.errors
         }), 400
 
     except DbError as e:
@@ -138,11 +140,12 @@ def login():
 
 @auth_bp.route("/logout", methods=["POST"])
 @jwt_required()
-def logout():
+async def logout():
     acces_token = get_jwt()
-    refresh_token = request.form.get('refresh_token', None)
+    form = await request.form
+    refresh_token = form.get('refresh_token', None)
     try:
-        if db.logout_user(refresh_token):
+        if await db.logout_user(refresh_token):
             return jsonify({"status": "success"}), 200
     except DbError as e:
         return jsonify({"status": "error", "message": f"{str(e)}"}), 500
@@ -154,20 +157,20 @@ def logout():
 
 @auth_bp.route("/refresh", methods=['POST'])
 @jwt_required(refresh=True)
-def refresh():
+async def refresh():
     refresh_token = get_jwt()
     try:
-        db.find_refresh_token(refresh_token)
+        await db.find_refresh_token(refresh_token)
     except DbError as e:
         return jsonify({'status': "error", "message": 'Please login again.'}), 202
 
     identity = refresh_token['sub']
     accesses_token = create_access_token(identity=identity)
-    return jsonify({'auth_token': accesses_token}), 200
+    return jsonify({'status':'success','auth_token': accesses_token}), 200
 
 
 @oauth_bp.route('/', methods=['GET'])
-def redirect_authorization():
+async def redirect_authorization():
     facebook = OauthProvider().provider
     return redirect(
         facebook.get_authorize_url(redirect_uri=url_for("oauth.authorize", _scheme='https'))
@@ -175,13 +178,12 @@ def redirect_authorization():
 
 
 @oauth_bp.route("/Authorize", methods=['GET'])
-def authorize():
+async def authorize():
     try:
         facebook = OauthProvider().provider
 
         def decode_json(payload):
             return json.loads(payload.decode('utf-8'))
-
         if "code" not in request.args:
             """"
             This code block will run if user decline Login dialog.
