@@ -111,10 +111,12 @@ async def login():
                     "message": f"Username or Password in correct. TRY AGAIN."
                 }), 202
             access_token = create_access_token(
-                identity=user['email']
+                identity=user['email'],
+                additional_claims= {'user_id':str(user['_id'])}
             )
             refresh_token = create_refresh_token(
-                identity=user['email']
+                identity=user['email'],
+                additional_claims={'user_id':str(user['_id'])}
             )
             insert_result = await db.create_login_session(refresh_token, user['email'], user['_id'])
 
@@ -199,7 +201,7 @@ async def authorize():
             decoder=decode_json
         )
         me = oauth_session.get('me', params={'fields': 'email'}).json()
-        user = db.find_user(me['email'])
+        user = db.find_user(me['email'],{"_id": 1, "email": 1, "username": 1, "password": 1})
         if "email" in user:
             # User already registered so just login user
             access_token = create_access_token(identity=user['email'])

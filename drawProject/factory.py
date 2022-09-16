@@ -4,6 +4,8 @@ from quart import Quart, jsonify
 from flask_jwt_extended import JWTManager
 
 from .auth.auth import auth_bp, oauth_bp
+from .rooms.rooms import rooms_bp
+from .user.user import user_bp
 
 
 def create_app(test=False):
@@ -35,5 +37,8 @@ def create_app(test=False):
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(oauth_bp)
+    app.register_blueprint(rooms_bp)
+    app.register_blueprint(user_bp)
+
 
     return app
