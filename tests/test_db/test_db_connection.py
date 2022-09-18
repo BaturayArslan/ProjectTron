@@ -1,8 +1,10 @@
+import aioredis.client
 import pytest
 import pytest_asyncio
 import pdb
 
 from drawProject import db
+from drawProject import redis
 
 
 @pytest.mark.asyncio
@@ -16,3 +18,13 @@ async def test_get_db(test_app):
         assert test_db.client.options._options['wTimeoutMS'] == 5000
 
         # TODO :: test if you can read and write to database
+
+@pytest.mark.asyncio
+async def test_get_redis(test_app):
+    async with test_app.test_request_context('/',method="GET"):
+        redis_rooms_pubsub , redis_connection = await redis.get_redis()
+        assert await redis_connection.execute_command('PING')
+        assert isinstance(redis_connection,aioredis.client.Redis)
+        assert isinstance(redis_rooms_pubsub,aioredis.client.PubSub)
+
+

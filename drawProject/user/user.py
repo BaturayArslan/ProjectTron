@@ -57,7 +57,7 @@ async def add_friend():
 
 @user_bp.route('/delete_friend', methods=['GET'])
 @jwt_required()
-async def add_friend():
+async def delete_friend():
     try:
         user = get_jwt()
         arguments = request.args

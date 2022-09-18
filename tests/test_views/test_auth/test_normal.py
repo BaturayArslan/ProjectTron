@@ -170,7 +170,7 @@ class TestLogin:
         assert str(exp_date - issued_date) == f"{str(app.config['JWT_ACCESS_TOKEN_EXPIRES'])}"
 
         refresh_header, refresh_claims, refresh_sign = response_json['refresh_token'].split(".")
-        decoded_refresh_claims = json.loads(base64.b64decode(refresh_claims + "="))
+        decoded_refresh_claims = json.loads(base64.b64decode(refresh_claims + "=="))
         assert decoded_refresh_claims['sub'] == "test@test.com"
         assert decoded_refresh_claims['type'] == "refresh"
         exp_date = datetime.fromtimestamp(decoded_refresh_claims['exp'])

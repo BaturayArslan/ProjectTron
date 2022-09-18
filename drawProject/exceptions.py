@@ -4,3 +4,9 @@ class DbError(Exception):
 
 class BadRequest(Exception):
     pass
+
+class RoomCreationFailed(Exception):
+    pass
+
+class UserJoinRoomFailed(Exception):
+    pass

@@ -30,3 +30,4 @@ class TestConfig(BaseConfig):
     #SERVER_NAME= 'draw.hbarslan.com'
     FACEBOOK_CONSUMER_KEY= os.getenv('FACEBOOK_CONSUMER_KEY')
     FACEBOOK_CONSUMER_SECRET= os.getenv('FACEBOOK_CONSUMER_SECRET')
+    REDIS = os.getenv('REDIS')

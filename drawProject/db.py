@@ -10,7 +10,7 @@ from flask_jwt_extended.exceptions import NoAuthorizationError
 from flask_jwt_extended import decode_token
 from datetime import datetime
 
-from .exceptions import DbError, BadRequest
+from .exceptions import DbError, BadRequest,RoomCreationFailed,UserJoinRoomFailed
 
 
 def get_db():
@@ -19,7 +19,7 @@ def get_db():
             current_app.config['MONGO_URI'],
             connectTimeoutMS=5000,
             wTimeoutMS=5000,
-            maxPoolSize=100,
+            maxPoolSize=10,
         )[current_app.config['DATABASE_NAME']]
 
     return g.db
@@ -103,36 +103,58 @@ async def create_room(data):
     else:
         raise DbError('Couldnt Create Room.')
 
+async def delete_room(room_id):
+    result = await db.rooms.delete_one({'_id':ObjectId(room_id)})
+    if result.deleted_count == 1:
+        return True
+    else:
+        raise DbError('Couldnt Delete Room.')
 
 async def find_room(id, project=None):
-    result = await db.rooms.find({"_id": id}, project)
+    result = await db.rooms.find_one({"_id": ObjectId(id)}, project)
     if result is not None:
         return result
     else:
         raise DbError('Couldnt Find Room.')
 
+async def get_rooms_info():
+    cursor =  db.rooms.find({},{'status.password':0})
+    result = await cursor.to_list(length=50)
+    if len(result) != 0:
+        return result
+    else:
+        raise DbError('There is no room.')
 
 async def check_user(id):
-    result = await db.rooms.find({"users._id": ObjectId(id)})
-    if result is None:
+    cursor = db.rooms.find({"users._id": ObjectId(id)}, {'_id': 1})
+    result = await cursor.to_list(length=100)
+    if len(result) == 0:
         return True
     else:
         raise DbError('You Already in a room.')
 
 
-async def join_user_to_room(user_id, room_id):
+async def join_user_to_room(user_id, room_id, room_info=None):
     data = {
         '_id': ObjectId(user_id),
         'point': 0,
-        "correct_answer": 0,
+        "color": 0,
         'win_count': 0,
         'kick_vote': 0,
     }
-    result = await db.rooms.update_one({'_id': ObjectId(room_id)}, {"$push": {"users": data}})
+    if not room_info:
+        room_info = await db.rooms.find_one({"_id": ObjectId(room_id)}, {'admin': 1})
+
+    if room_info['admin']:
+        result = await db.rooms.update_one({'_id': ObjectId(room_id)},
+                                           {"$push": {"users": data}})
+    else:
+        result = await db.rooms.update_one({'_id': ObjectId(room_id)},
+                                       {"$push": {"users": data}, "$set": {'admin': ObjectId(user_id)}})
     if result.modified_count == 1:
         return result
     else:
-        raise DbError('Couldnt Joing User To Room.')
+        raise UserJoinRoomFailed('Couldnt Joing User To Room.')
 
 
 async def get_user_profile(user_id):
@@ -181,7 +203,7 @@ async def get_messages(user_id, friend_id):
     )
     result_2 = await db.users.update_one(
         {'_id': ObjectId(user_id), "friends": {"$elemMatch": {"friend_id": ObjectId(friend_id)}}},
-        {'$set':{'friends.$.last_opened':datetime.timestamp()}}
+        {'$set': {'friends.$.last_opened': datetime.timestamp()}}
     )
     if result is not None and result_2.modified_count == 1:
         return result
