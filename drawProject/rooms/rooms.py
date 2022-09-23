@@ -5,6 +5,7 @@ from bson import ObjectId
 import aioredis
 import async_timeout
 import asyncio
+import json
 
 
 
@@ -27,6 +28,7 @@ async def create_room():
         #Check if user already in a room.Validate user have a right to create room.
         await db.check_user(user['user_id'])
         if form.validate():
+
             if data['password'] == "":
                 data.pop('password')
                 data.update({'status': {'public': True, 'password': ''}})
@@ -36,9 +38,15 @@ async def create_room():
             data.update({
                 'admin':ObjectId(user['user_id'])
             })
+
             #TODO :: if join_user_to_room fails than discard new created room.
             result = await db.create_room(data)
             await db.join_user_to_room(user['user_id'], result.inserted_id)
+
+            #Publish an event for refresh_room_info view subscribers.
+            redis.events.set_room_creation(result.inserted_id,data,user['user_id'])
+            await g.redis_connection.publish('rooms_info_feed',json.dumps(redis.events.ROOM_CREATION))
+
             return jsonify({
                 'status':'success',
                 'message':{
@@ -76,6 +84,11 @@ async def join_room(room_id):
                 'message': 'Wrong Password.'
             }),202
         await db.join_user_to_room(user['user_id'],room_id,room_info)
+
+        # Publish an event for refresh_room_info view subscribers.
+        redis.Events.set_user_join(room_id)
+        await g.redis_connection.publish('rooms_info_feed', json.dumps(redis.Events.USER_JOIN.value))
+
         return jsonify({
             'status':'success',
             'message':'OK'
@@ -86,20 +99,61 @@ async def join_room(room_id):
     except Exception as e:
         raise e
 
+
+@rooms_bp.route('/leaveRoom/<roomd_id>',methods=['GET'])
+@jwt_required()
+async def leave_room(room_id):
+    try:
+        #TODO :: Save user stats  to database before leave
+        user = get_jwt()
+        redis_connection = g.redis_connection
+        result = await db.leave_user_from_room(user['user_id'],room_id)
+
+        # Publish an event for refresh_room_info view subscribers.
+        redis.Events.set_user_laeves(room_id)
+        await g.redis_connection.publish('rooms_info_feed', json.dumps(redis.Events.USER_LEAVES.value))
+
+        return jsonify({
+            'status':'success',
+            'message':'OK'
+        }),200
+
+    except DbError as e:
+        return jsonify({"status": "error", "message": f"{str(e)}"}), 500
+    except Exception as e:
+        raise e
+
+@rooms_bp.route('/Rooms',methods=['GET'])
+@jwt_required()
+async def get_rooms_info():
+    try:
+        user = get_jwt()
+        rooms_info = await db.get_rooms_info()
+        return jsonify({
+            "status": 'success',
+            'message': rooms_info
+        }),200
+    except DbError as e :
+        return jsonify({'status':'error','message': f'{str(e)}'}),500
+    except Exception as e:
+        raise e
+
 @rooms_bp.route("/update",methods=['GET'])
 @jwt_required()
 async def refresh_rooms_info():
     try:
-        pubsub : aioredis.client.PubSub = g.redis_rooms_pubsub
-        while True:
+        time_stamp = float(request.args.get('timestamp',None))
+        broker = redis.broker
+        broker_task = redis.broker_task
+        if time_stamp == 0 or time_stamp == broker.events[-1]:
             async with async_timeout.timeout(120.0):
-                message = await pubsub.get_message(ignore_subscribe_messages=True)
-                if message:
-                    return jsonify({'status':'success','message':'message'})
-                await asyncio.sleep(1)
-                """
-                    rooms_info = db.get_rooms_info()
-                    jsonify({'status':'success','message':rooms_info})
-                """
+                event = await broker.subscribe()
+        else:
+            events = broker.syncronize(time_stamp)
+            if events:
+                return jsonify({'status':'success','events':events}),200
+            return jsonify({'status':'error','message':'Your are too slow.'}),302
+
+
     except asyncio.TimeoutError as e:
         return jsonify({'messsage':'timeout.'}),200

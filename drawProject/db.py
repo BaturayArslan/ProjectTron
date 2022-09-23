@@ -10,7 +10,7 @@ from flask_jwt_extended.exceptions import NoAuthorizationError
 from flask_jwt_extended import decode_token
 from datetime import datetime
 
-from .exceptions import DbError, BadRequest,RoomCreationFailed,UserJoinRoomFailed
+from .exceptions import DbError, BadRequest, RoomCreationFailed, UserJoinRoomFailed
 
 
 def get_db():
@@ -103,12 +103,14 @@ async def create_room(data):
     else:
         raise DbError('Couldnt Create Room.')
 
+
 async def delete_room(room_id):
-    result = await db.rooms.delete_one({'_id':ObjectId(room_id)})
+    result = await db.rooms.delete_one({'_id': ObjectId(room_id)})
     if result.deleted_count == 1:
         return True
     else:
         raise DbError('Couldnt Delete Room.')
+
 
 async def find_room(id, project=None):
     result = await db.rooms.find_one({"_id": ObjectId(id)}, project)
@@ -117,13 +119,15 @@ async def find_room(id, project=None):
     else:
         raise DbError('Couldnt Find Room.')
 
+
 async def get_rooms_info():
-    cursor =  db.rooms.find({},{'status.password':0})
+    cursor = db.rooms.find({}, {'status.password': 0})
     result = await cursor.to_list(length=50)
     if len(result) != 0:
         return result
     else:
         raise DbError('There is no room.')
+
 
 async def check_user(id):
     cursor = db.rooms.find({"users._id": ObjectId(id)}, {'_id': 1})
@@ -150,12 +154,27 @@ async def join_user_to_room(user_id, room_id, room_info=None):
                                            {"$push": {"users": data}})
     else:
         result = await db.rooms.update_one({'_id': ObjectId(room_id)},
-                                       {"$push": {"users": data}, "$set": {'admin': ObjectId(user_id)}})
+                                           {"$push": {"users": data}, "$set": {'admin': ObjectId(user_id)}})
     if result.modified_count == 1:
         return result
     else:
         raise UserJoinRoomFailed('Couldnt Joing User To Room.')
 
+
+async def leave_user_from_room(user_id, room_id):
+    room_info = db.rooms.find_one({'_id': ObjectId(room_id)}, {'admin': 1, 'users': 1})
+    if len(room_info['users']) == 1:
+        result = await db.rooms.update_one({'_id': ObjectId(room_id)}, {'$set': {'admin': None, 'users': []}})
+    elif room_info['admin'] == ObjectId(user_id):
+        result = await db.rooms.update_one({'_id': ObjectId(room_id)}, {"$pull": {"users": {"_id": ObjectId(user_id)}},
+                                                                        '$set': {'admin': room_info['users'][1]}})
+    else:
+        result = await db.rooms.update_one({'_id': ObjectId(room_id)}, {"$pull": {"users": {"_id": ObjectId(user_id)}}})
+
+    if result.modified_count == 1:
+        return result
+    else:
+        raise DbError('Couldnt leave room.')
 
 async def get_user_profile(user_id):
     result = await db.users.find({'_id': ObjectId(user_id)}, {'password': 0})

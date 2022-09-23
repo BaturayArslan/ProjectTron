@@ -1,12 +1,13 @@
 import quart.flask_patch
 from pathlib import Path
-from quart import Quart, jsonify
+from quart import Quart, jsonify,g,current_app
 from flask_jwt_extended import JWTManager
+import asyncio
 
 from .auth.auth import auth_bp, oauth_bp
 from .rooms.rooms import rooms_bp
 from .user.user import user_bp
-
+from .redis import broker,get_redis
 
 def create_app(test=False):
     APP_DIR = Path(__file__).parent
@@ -33,7 +34,12 @@ def create_app(test=False):
     def my_missing_token_callback(messge):
         return jsonify({"status": "error", "message": "Missing Token."}), 402
 
-
+    @app.before_first_request
+    async def deneme():
+        await get_redis()
+        app.add_background_task(broker.listen)
+        #task = list(app.background_tasks.data)[0]()
+        #app.my_background_task = task
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(oauth_bp)
