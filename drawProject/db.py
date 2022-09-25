@@ -162,7 +162,7 @@ async def join_user_to_room(user_id, room_id, room_info=None):
 
 
 async def leave_user_from_room(user_id, room_id):
-    room_info = db.rooms.find_one({'_id': ObjectId(room_id)}, {'admin': 1, 'users': 1})
+    room_info = await db.rooms.find_one({'_id': ObjectId(room_id)}, {'admin': 1, 'users': 1})
     if len(room_info['users']) == 1:
         result = await db.rooms.update_one({'_id': ObjectId(room_id)}, {'$set': {'admin': None, 'users': []}})
     elif room_info['admin'] == ObjectId(user_id):

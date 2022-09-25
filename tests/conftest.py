@@ -7,14 +7,14 @@ from drawProject.factory import create_app
 def test_app():
     return create_app(test=True)
 
-@pytest_asyncio.fixture()
-def app():
-    app = create_app(test=True)
-    return app
-
-@pytest_asyncio.fixture()
-def client(app):
-    return app.test_client()
+# @pytest_asyncio.fixture()
+# def app():
+#     app = create_app(test=True)
+#     return app
+#
+# @pytest_asyncio.fixture()
+# def client(app):
+#     return app.test_client()
 
 @pytest_asyncio.fixture(scope="class")
 def class_app():
@@ -29,6 +29,10 @@ def class_client(class_app):
 def event_loop():
     loop = asyncio.get_event_loop_policy().get_event_loop()
     yield loop
+    for task in asyncio.all_tasks(asyncio.get_event_loop_policy().get_event_loop()):
+        task.cancel()
+        loop.run_until_complete(task)
+
     loop.close()
 
 

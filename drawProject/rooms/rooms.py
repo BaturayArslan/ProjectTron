@@ -44,8 +44,8 @@ async def create_room():
             await db.join_user_to_room(user['user_id'], result.inserted_id)
 
             #Publish an event for refresh_room_info view subscribers.
-            redis.events.set_room_creation(result.inserted_id,data,user['user_id'])
-            await g.redis_connection.publish('rooms_info_feed',json.dumps(redis.events.ROOM_CREATION))
+            redis.Events.set_room_creation(result.inserted_id,data,user['user_id'])
+            await g.redis_connection.publish('rooms_info_feed',json.dumps(redis.Events.ROOM_CREATION))
 
             return jsonify({
                 'status':'success',
@@ -87,7 +87,7 @@ async def join_room(room_id):
 
         # Publish an event for refresh_room_info view subscribers.
         redis.Events.set_user_join(room_id)
-        await g.redis_connection.publish('rooms_info_feed', json.dumps(redis.Events.USER_JOIN.value))
+        await g.redis_connection.publish('rooms_info_feed', json.dumps(redis.Events.USER_JOIN))
 
         return jsonify({
             'status':'success',
@@ -100,18 +100,18 @@ async def join_room(room_id):
         raise e
 
 
-@rooms_bp.route('/leaveRoom/<roomd_id>',methods=['GET'])
+@rooms_bp.route('/leaveRoom/<string:room_id>',methods=['GET'])
 @jwt_required()
 async def leave_room(room_id):
     try:
         #TODO :: Save user stats  to database before leave
         user = get_jwt()
-        redis_connection = g.redis_connection
+        pubsub,redis_connection = await redis.get_redis()
         result = await db.leave_user_from_room(user['user_id'],room_id)
 
         # Publish an event for refresh_room_info view subscribers.
         redis.Events.set_user_laeves(room_id)
-        await g.redis_connection.publish('rooms_info_feed', json.dumps(redis.Events.USER_LEAVES.value))
+        await g.redis_connection.publish('rooms_info_feed', json.dumps(redis.Events.USER_LEAVES))
 
         return jsonify({
             'status':'success',
@@ -142,14 +142,15 @@ async def get_rooms_info():
 @jwt_required()
 async def refresh_rooms_info():
     try:
-        time_stamp = float(request.args.get('timestamp',None))
+        client_time_stamp = float(request.args.get('timestamp',None)) if request.args.get('timestamp',None) else None
         broker = redis.broker
-        broker_task = redis.broker_task
-        if time_stamp == 0 or time_stamp == broker.events[-1]:
+        if client_time_stamp is None or client_time_stamp == broker.events[-1]['timestamp']:
             async with async_timeout.timeout(120.0):
                 event = await broker.subscribe()
+                return jsonify({'status':'success','message':event})
         else:
-            events = broker.syncronize(time_stamp)
+            await asyncio.sleep(0.5)
+            events = broker.syncronize(client_time_stamp)
             if events:
                 return jsonify({'status':'success','events':events}),200
             return jsonify({'status':'error','message':'Your are too slow.'}),302

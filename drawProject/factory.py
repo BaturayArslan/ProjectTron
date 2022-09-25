@@ -35,11 +35,18 @@ def create_app(test=False):
         return jsonify({"status": "error", "message": "Missing Token."}), 402
 
     @app.before_first_request
-    async def deneme():
+    async def init():
         await get_redis()
         app.add_background_task(broker.listen)
-        #task = list(app.background_tasks.data)[0]()
-        #app.my_background_task = task
+        task = list(app.background_tasks.data)[0]()
+        app.my_background_task = task
+        app.publish_task = None
+
+    @app.after_serving
+    async def clear():
+        app.my_background_task.cancel()
+        await app.my_background_task
+
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(oauth_bp)
