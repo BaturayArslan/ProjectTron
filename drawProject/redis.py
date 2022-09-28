@@ -98,7 +98,7 @@ class Events():
     ROOM_CREATION = None
     USER_JOIN = None
     USER_LEAVES = None
-
+    MESSAGE_SENDS = None
     @staticmethod
     def set_room_creation(room_id, data, user_id):
         Events.ROOM_CREATION = {
@@ -139,5 +139,14 @@ class Events():
             'name': 'user leaves',
             'room_id': str(room_id),
             'timestamp': datetime.timestamp(datetime.utcnow())
+        }
+    @staticmethod
+    def set_message_sends(user_id,msg,timestamp,friend_id):
+        Events.MESSAGE_SENDS = {
+            'name' : 'message sends',
+            'sender': user_id,
+            'reciever': friend_id,
+            'msg':msg,
+            'timestamp':timestamp
         }
 events = Events()

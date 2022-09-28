@@ -142,7 +142,7 @@ async def get_rooms_info():
 @jwt_required()
 async def refresh_rooms_info():
     try:
-        client_time_stamp = float(request.args.get('timestamp',None)) if request.args.get('timestamp',None) else None
+        client_time_stamp = float(request.args.get('timestamp')) if request.args.get('timestamp',None) else None
         broker = redis.broker
         if client_time_stamp is None or client_time_stamp == broker.events[-1]['timestamp']:
             async with async_timeout.timeout(120.0):
@@ -155,6 +155,7 @@ async def refresh_rooms_info():
                 return jsonify({'status':'success','events':events}),200
             return jsonify({'status':'error','message':'Your are too slow.'}),302
 
-
+    except ValueError as e :
+        return jsonify({'status':'error','message':'Invalid timestamp'}),400
     except asyncio.TimeoutError as e:
-        return jsonify({'messsage':'timeout.'}),200
+        return jsonify({'status':'error','messsage': 'timeout.'}), 408

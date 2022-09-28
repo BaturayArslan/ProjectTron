@@ -288,5 +288,4 @@ class TestRefreshRoomsInfo:
             join_room_result_json = await join_room_result.get_json()
             result = await task1
             result_json = await result.get_json()
-            data = await result.data
-            print(result)
+            assert len(result_json['events']) == 2

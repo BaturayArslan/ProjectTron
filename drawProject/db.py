@@ -177,7 +177,7 @@ async def leave_user_from_room(user_id, room_id):
         raise DbError('Couldnt leave room.')
 
 async def get_user_profile(user_id):
-    result = await db.users.find({'_id': ObjectId(user_id)}, {'password': 0})
+    result = await db.users.find_one({'_id': ObjectId(user_id)}, {'password': 0})
     if result is not None:
         return result
     else:
@@ -188,6 +188,7 @@ async def add_friend(user_id, friend_id, avatar):
     data = {
         '_id': ObjectId(friend_id),
         'avatar': avatar,
+        'last_opened': datetime.timestamp(datetime.utcnow()),
         'messages': []
     }
     result = await db.users.update_one({'_id': ObjectId(user_id)}, {'$push': {'friends': data}})
@@ -206,8 +207,9 @@ async def delete_friend(user_id, friend_id):
 
 
 async def send_message(user_id, friend_id, message):
-    result = db.users.update_one(
-        {'_id': ObjectId(user_id), "friends": {"$elemMatch": {"friend_id": ObjectId(friend_id)}}},
+    #TODO :: create bulk write operation and write mesage both user and friend's friend.messages field.
+    result = await db.users.update_one(
+        {'_id': ObjectId(user_id), "friends": {"$elemMatch": {"_id": ObjectId(friend_id)}}},
         {"$push": {"friends.$.messages": message}})
     if result.modified_count == 1:
         return result
@@ -216,26 +218,49 @@ async def send_message(user_id, friend_id, message):
 
 
 async def get_messages(user_id, friend_id):
-    result = await db.users.find(
-        {'_id': ObjectId(user_id), "friends": {"$elemMatch": {"friend_id": ObjectId(friend_id)}}},
-        {'friends.messages': 1}
+    cursor = await db.users.aggregate(
+        [
+            {
+                '$match': {
+                    '_id': ObjectId('user_id')
+                }
+            },
+            {
+                '$unwind': '$friends'
+            },
+            {
+                '$project': {
+                    'friends._id': 1,
+                    'friends.avatar': 1,
+                    'friends.messages': {
+                        '$slice': [
+                            {
+                                '$filter': {
+                                    'input': '$friends.messages',
+                                    'as': 'message',
+                                    'cond': {
+
+                                    }
+                                }
+                            }, 10
+                        ]
+                    }
+                }
+            },
+            {
+                '$match': {
+                    'friends._id': ObjectId(friend_id)
+                }
+            }
+        ]
     )
+    result = await cursor.to_list(length=None)
     result_2 = await db.users.update_one(
-        {'_id': ObjectId(user_id), "friends": {"$elemMatch": {"friend_id": ObjectId(friend_id)}}},
-        {'$set': {'friends.$.last_opened': datetime.timestamp()}}
+        {'_id': ObjectId(user_id), "friends": {"$elemMatch": {"_id": ObjectId(friend_id)}}},
+        {'$set': {'friends.$.last_opened': datetime.timestamp(datetime.utcnow())}}
     )
-    if result is not None and result_2.modified_count == 1:
+    if len(result) != 0 and result_2.modified_count == 1:
         return result
     else:
         raise DbError('Couldnt read messages')
 
-#
-# def close_db(e=None):
-#     db = g.pop('db', None)
-#
-#     if db is not None:
-#         db.close()
-#
-#
-# def init_app(app):
-#     app.teardown_appcontext(close_db)

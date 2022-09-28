@@ -1,5 +1,7 @@
 from bson import ObjectId
 from collections.abc import Iterable
+import decimal
+
 def string_to_int(obj:dict):
     for key in obj.keys():
         try:
@@ -25,3 +27,17 @@ def objectid_to_str(obj:Iterable):
             if isinstance(item,Iterable):
                 obj[index] = objectid_to_str(item)
     return obj
+
+def normal_to_redis_timestamp(timestamp:float):
+    after_comma = '{:.2f}'.format(timestamp % 1).split('.')[1]
+    before_comma = str(int(timestamp))
+    redis_timestamp = before_comma + after_comma
+    return int(redis_timestamp)
+
+def redis_to_normal_timestamp(timestamp:int):
+    digits = decimal.Decimal(timestamp).as_tuple()
+    last_two_digit = digits.digits[-2:]
+    str_last_two_digits = '%d%d'%last_two_digit
+    other_digits = digits.digits[:-2]
+    str_other_digits = ''.join(map(str,other_digits))
+    return float(str_other_digits + "." + str_last_two_digits)
