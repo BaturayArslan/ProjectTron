@@ -13,6 +13,7 @@ from ..exceptions import DbError,RoomCreationFailed,UserJoinRoomFailed
 from ..utils.utils import string_to_int
 from drawProject import db
 from drawProject import redis
+from ..game.game import Game
 
 rooms_bp = Blueprint("room", __name__, url_prefix="/room")
 
@@ -39,13 +40,14 @@ async def create_room():
                 'admin':ObjectId(user['user_id'])
             })
 
-            #TODO :: if join_user_to_room fails than discard new created room.
             result = await db.create_room(data)
             await db.join_user_to_room(user['user_id'], result.inserted_id)
 
             #Publish an event for refresh_room_info view subscribers.
             redis.Events.set_room_creation(result.inserted_id,data,user['user_id'])
             await g.redis_connection.publish('rooms_info_feed',json.dumps(redis.Events.ROOM_CREATION))
+
+            current_app.games[str(result.inserted_id)] = Game()
 
             return jsonify({
                 'status':'success',
@@ -159,3 +161,4 @@ async def refresh_rooms_info():
         return jsonify({'status':'error','message':'Invalid timestamp'}),400
     except asyncio.TimeoutError as e:
         return jsonify({'status':'error','messsage': 'timeout.'}), 408
+

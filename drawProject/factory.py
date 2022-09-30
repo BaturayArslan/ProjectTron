@@ -7,6 +7,7 @@ import asyncio
 from .auth.auth import auth_bp, oauth_bp
 from .rooms.rooms import rooms_bp
 from .user.user import user_bp
+from .game.websocket import websocket_bp
 from .redis import broker,get_redis
 
 def create_app(test=False):
@@ -14,7 +15,6 @@ def create_app(test=False):
     STATIC_FOLDER = APP_DIR / 'static'
 
     app = Quart(__name__, static_folder=str(STATIC_FOLDER))
-
     if test:
         app.config.from_object('drawProject.config.TestConfig')
     else:
@@ -41,17 +41,21 @@ def create_app(test=False):
         task = list(app.background_tasks.data)[0]()
         app.my_background_task = task
         app.publish_task = None
+        app.games={}
 
-    @app.after_serving
-    async def clear():
-        app.my_background_task.cancel()
-        await app.my_background_task
+
+
+    # @app.after_serving
+    # async def clear():
+    #     app.my_background_task.cancel()
+    #     await app.my_background_task
 
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(oauth_bp)
     app.register_blueprint(rooms_bp)
     app.register_blueprint(user_bp)
+    app.register_blueprint(websocket_bp)
 
 
     return app

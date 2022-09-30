@@ -4,6 +4,7 @@ import jwt
 from quart import g, current_app
 from werkzeug.local import LocalProxy
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import UpdateOne
 from bson import ObjectId
 from datetime import datetime
 from flask_jwt_extended.exceptions import NoAuthorizationError
@@ -162,7 +163,9 @@ async def join_user_to_room(user_id, room_id, room_info=None):
 
 
 async def leave_user_from_room(user_id, room_id):
-    room_info = await db.rooms.find_one({'_id': ObjectId(room_id)}, {'admin': 1, 'users': 1})
+    room_info = await db.rooms.find_one({'_id': ObjectId(room_id),"users": {"$elemMatch": {"_id": ObjectId(user_id)}}}, {'admin': 1, 'users': 1})
+    if room_info is None:
+        raise DbError('You are not in a room.')
     if len(room_info['users']) == 1:
         result = await db.rooms.update_one({'_id': ObjectId(room_id)}, {'$set': {'admin': None, 'users': []}})
     elif room_info['admin'] == ObjectId(user_id):
@@ -207,11 +210,14 @@ async def delete_friend(user_id, friend_id):
 
 
 async def send_message(user_id, friend_id, message):
-    #TODO :: create bulk write operation and write mesage both user and friend's friend.messages field.
-    result = await db.users.update_one(
-        {'_id': ObjectId(user_id), "friends": {"$elemMatch": {"_id": ObjectId(friend_id)}}},
-        {"$push": {"friends.$.messages": message}})
-    if result.modified_count == 1:
+    request = [
+        UpdateOne({'_id': ObjectId(user_id), "friends": {"$elemMatch": {"_id": ObjectId(friend_id)}}},
+        {"$push": {"friends.$.messages": message}}),
+        UpdateOne({'_id': ObjectId(friend_id), "friends": {"$elemMatch": {"_id": ObjectId(user_id)}}},
+                  {"$push": {"friends.$.messages": message}})
+    ]
+    result = await db.users.bulk_write(request)
+    if result.modified_count == 2:
         return result
     else:
         raise DbError('Couldnt send message.')

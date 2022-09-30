@@ -103,7 +103,7 @@ async def send_message():
 
         return jsonify({
             'status': 'success',
-            'message': 'message deliverid.'
+            'message': {'msg':msg,'timestamp':timestamp,'reciever':friend_id,'sender':user['user_id']}
         })
     except DbError as e:
         jsonify({
@@ -166,3 +166,5 @@ async def update_messages():
         return jsonify({'status':'error','messsage': 'timeout.'}), 408
     except Exception as e:
         raise e
+
+# TODO :: implement an endponit for updating last_opened field

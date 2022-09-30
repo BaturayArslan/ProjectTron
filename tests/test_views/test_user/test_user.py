@@ -4,6 +4,8 @@ from flask_jwt_extended import decode_token
 
 from drawProject import db
 from drawProject import redis
+from drawProject.utils import utils
+
 @pytest_asyncio.fixture(scope='class')
 async def register_users(class_app,class_client):
     """
@@ -82,10 +84,13 @@ class TestSendMessage:
             user1,user2 = get_user
             user1_token = decode_token(user1["auth_token"].encode('utf-8'))
             user2_token = decode_token(user2["auth_token"].encode('utf-8'))
-            await redis.get_redis()
+            pubsub, redis_connection = await redis.get_redis()
 
             headers = {
                 'Authorization' : f'Bearer {user1["auth_token"]}'
+            }
+            headers2 = {
+                'Authorization' : f'Bearer {user2["auth_token"]}'
             }
             message={
                 'friend_id': user2_token['user_id'],
@@ -95,14 +100,27 @@ class TestSendMessage:
                 'friend_id': user2_token['user_id'],
                 'avatar': 1
             }
-
+            params2={
+                'friend_id': user1_token['user_id'],
+                'avatar': 1
+            }
 
             add_result = await client.get('/user/add_friend', headers=headers, query_string=params)
             assert add_result.status_code == 200
 
+            add_result2 = await client.get('/user/add_friend', headers=headers2, query_string=params2)
+            assert add_result2.status_code == 200
+
             result = await client.post('/user/send_message',json=message,headers=headers)
             result_json = await result.get_json()
-            print(result_json)
+            assert result.status_code == 200
+            assert result_json['message']['msg'] == 'merhaba'
+            assert result_json['message']['sender'] == user1_token['user_id']
+            assert result_json['message']['reciever'] == user2_token['user_id']
+            redis_timestamp = utils.normal_to_redis_timestamp(result_json['message']['timestamp'])
+            stream_event = await redis_connection.xread({user2_token['user_id']:0},count=1)
+            event = stream_event[0][1][0][1]
+            assert float(event['timestamp'.encode('utf-8')].decode('utf-8')) == result_json['message']['timestamp']
 
 @pytest.mark.usefixtures('login_user_fixture')
 @pytest.mark.asyncio
