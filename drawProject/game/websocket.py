@@ -57,14 +57,16 @@ async def ws(room_id):
         await join_room(room_id,user)
 
         game = current_app.games[room_id]
-        recieve_task,send_task = game.register(user['user_id'],websocket)
-        await recieve_task
+        receive_task,send_task = game.register(user['user_id'],user['user_name'],websocket)
+        await receive_task
         await send_task
-
     except asyncio.CancelledError as e:
-        'Clean up when user disconnect.'
+        # Clean up when user disconnect.
         try:
+            print('clean up ')
             await leave_room(user,room_id)
+            game.disconnect(user['user_id'])
+            await _cancel_task((receive_task,send_task),raise_exp=True)
             raise
         except NameError:
             pass
@@ -72,11 +74,12 @@ async def ws(room_id):
             pass
 
 
-async def _cancel_task(tasks):
+async def _cancel_task(tasks,raise_exp=False):
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks,return_exceptions=True)
-    _raise_exceptions(tasks)
+    if raise_exp:
+        _raise_exceptions(tasks)
 
 def _raise_exceptions(tasks):
     # Raise any unexpected exceptions

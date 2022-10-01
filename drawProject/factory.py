@@ -39,10 +39,10 @@ def create_app(test=False):
         await get_redis()
         app.add_background_task(broker.listen)
         task = list(app.background_tasks.data)[0]()
+        task.set_name('background_task')
         app.my_background_task = task
         app.publish_task = None
         app.games={}
-
 
 
     # @app.after_serving

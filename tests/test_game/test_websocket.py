@@ -1,6 +1,7 @@
 import pytest
 import pytest_asyncio
 import asyncio
+import json
 from quart import g,websocket,current_app
 from quart.testing import WebsocketResponseError
 
@@ -123,8 +124,9 @@ class TestWebSocket:
             }
 
             async with client.websocket(f'/ws/room/{room_id}',headers=headers) as socket:
-                await socket.send('websocket message recivied.')
+                await socket.send(json.dumps('websocket message recivied.'))
                 await asyncio.sleep(5)
+                print('ls')
         except WebsocketResponseError as e:
             print(e.response)
             print(await e.response.data)

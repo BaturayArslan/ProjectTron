@@ -30,8 +30,9 @@ def event_loop():
     loop = asyncio.get_event_loop_policy().get_event_loop()
     yield loop
     for task in asyncio.all_tasks(asyncio.get_event_loop_policy().get_event_loop()):
-        task.cancel()
-        loop.run_until_complete(task)
+        if task.get_name() == 'background_task':
+            task.cancel()
+            asyncio.get_event_loop().run_until_complete(task)
 
     loop.close()
 

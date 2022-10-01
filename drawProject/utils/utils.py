@@ -41,3 +41,11 @@ def redis_to_normal_timestamp(timestamp:int):
     other_digits = digits.digits[:-2]
     str_other_digits = ''.join(map(str,other_digits))
     return float(str_other_digits + "." + str_last_two_digits)
+
+def parse_redis_stream_event(events):
+    result = []
+    for event in events[0][1]:
+        id = event[0]
+        event[1].update({"id":id})
+        result.append(event[1])
+    return result

@@ -112,11 +112,11 @@ async def login():
                 }), 202
             access_token = create_access_token(
                 identity=user['email'],
-                additional_claims= {'user_id':str(user['_id'])}
+                additional_claims= {'user_id':str(user['_id']),'user_name':user['username']}
             )
             refresh_token = create_refresh_token(
                 identity=user['email'],
-                additional_claims={'user_id':str(user['_id'])}
+                additional_claims={'user_id':str(user['_id']),'user_name':user['username']}
             )
             insert_result = await db.create_login_session(refresh_token, user['email'], user['_id'])
 
