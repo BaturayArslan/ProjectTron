@@ -43,9 +43,34 @@ def redis_to_normal_timestamp(timestamp:int):
     return float(str_other_digits + "." + str_last_two_digits)
 
 def parse_redis_stream_event(events):
+    """
+        events :
+                [[b'63347ca13c7f49da780958d1',
+                 [(b'166437336747-0',
+                  {b'msg': b'merhaba',
+                  b'name': b'message sends',
+                  b'reciever': b'63347ca13c7f49da780958d1',
+                  b'sender': b'63347ca13c7f49da780958d0',
+                  b'timestamp': b'1664373367.466694'}),
+                (b'1664662371870-0', {b'hello': b'word', b'id': b'1664662371870-0'})]]]
+        return :
+                [{'id': '166437336747-0',
+                  'msg': 'merhaba',
+                  'name': 'message sends',
+                  'reciever': '63347ca13c7f49da780958d1',
+  '               'sender': '63347ca13c7f49da780958d0',
+                  'timestamp': '1664373367.466694'},
+                {'hello': 'word', 'id': '1664662371870-0'}]
+
+    """
     result = []
     for event in events[0][1]:
         id = event[0]
-        event[1].update({"id":id})
-        result.append(event[1])
+        event[1].update({b"id":id})
+        new_dict={}
+        for key in event[1]:
+            new_key = key.decode('utf-8')
+            new_value = event[1][key].decode('utf8')
+            new_dict.update({new_key:new_value})
+        result.append(new_dict)
     return result

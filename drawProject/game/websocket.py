@@ -65,7 +65,7 @@ async def ws(room_id):
         try:
             print('clean up ')
             await leave_room(user,room_id)
-            game.disconnect(user['user_id'])
+            game.disconnect(user['user_id'],user['user_name'])
             await _cancel_task((receive_task,send_task),raise_exp=True)
             raise
         except NameError:

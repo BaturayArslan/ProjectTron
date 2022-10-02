@@ -47,7 +47,7 @@ async def create_room():
             redis.Events.set_room_creation(result.inserted_id,data,user['user_id'])
             await g.redis_connection.publish('rooms_info_feed',json.dumps(redis.Events.ROOM_CREATION))
 
-            current_app.games[str(result.inserted_id)] = Game(str(result.inserted_id))
+            current_app.games[str(result.inserted_id)] = Game(str(result.inserted_id),data)
 
             return jsonify({
                 'status':'success',
