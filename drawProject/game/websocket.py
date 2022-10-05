@@ -57,7 +57,7 @@ async def ws(room_id):
         await join_room(room_id,user)
 
         game = current_app.games[room_id]
-        receive_task,send_task = game.register(user['user_id'],user['user_name'],websocket)
+        receive_task,send_task = await game.register(user['user_id'],user['user_name'],websocket)
         await receive_task
         await send_task
     except asyncio.CancelledError as e:
@@ -65,7 +65,7 @@ async def ws(room_id):
         try:
             print('clean up ')
             await leave_room(user,room_id)
-            game.disconnect(user['user_id'],user['user_name'])
+            await game.disconnect(user['user_id'],user['user_name'])
             await _cancel_task((receive_task,send_task),raise_exp=True)
             raise
         except NameError:

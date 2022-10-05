@@ -1,3 +1,5 @@
+import json
+
 from bson import ObjectId
 from collections.abc import Iterable
 import decimal
@@ -47,11 +49,13 @@ def parse_redis_stream_event(events):
         events :
                 [[b'63347ca13c7f49da780958d1',
                  [(b'166437336747-0',
-                  {b'msg': b'merhaba',
-                  b'name': b'message sends',
-                  b'reciever': b'63347ca13c7f49da780958d1',
-                  b'sender': b'63347ca13c7f49da780958d0',
-                  b'timestamp': b'1664373367.466694'}),
+                  {b'container':{
+                    b'msg': b'merhaba',
+                    b'name': b'message sends',
+                    b'reciever': b'63347ca13c7f49da780958d1',
+                    b'sender': b'63347ca13c7f49da780958d0',
+                    b'timestamp': b'1664373367.466694'}
+                  }),
                 (b'1664662371870-0', {b'hello': b'word', b'id': b'1664662371870-0'})]]]
         return :
                 [{'id': '166437336747-0',
@@ -66,11 +70,6 @@ def parse_redis_stream_event(events):
     result = []
     for event in events[0][1]:
         id = event[0]
-        event[1].update({b"id":id})
-        new_dict={}
-        for key in event[1]:
-            new_key = key.decode('utf-8')
-            new_value = event[1][key].decode('utf8')
-            new_dict.update({new_key:new_value})
-        result.append(new_dict)
+        parsed_event = json.loads(event[1][b'container'])
+        result.append(parsed_event)
     return result

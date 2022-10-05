@@ -124,7 +124,7 @@ class TestWebSocket:
             }
 
             async with client.websocket(f'/ws/room/{room_id}',headers=headers) as socket:
-                await socket.send(json.dumps('websocket message recivied.'))
+                await socket.send(json.dumps({'hello':{'merhaba':'dunya '}}))
                 await asyncio.sleep(5)
                 print('ls')
         except WebsocketResponseError as e:

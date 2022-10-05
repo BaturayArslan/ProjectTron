@@ -270,3 +270,8 @@ async def get_messages(user_id, friend_id):
     else:
         raise DbError('Couldnt read messages')
 
+async def is_admin(user_id,room_id):
+    result = await db.rooms.find_one({"_id":ObjectId(room_id)},{'admin':1})
+    if str(result['admin']) == user_id:
+        return True
+    return False
