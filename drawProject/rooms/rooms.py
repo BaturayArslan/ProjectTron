@@ -32,9 +32,9 @@ async def create_room():
 
             if data['password'] == "":
                 data.pop('password')
-                data.update({'status': {'public': True, 'password': ''}})
+                data.update({'status': {'public': True, 'password': '','is_start':False}})
             else:
-                data.update({'status': {'public': False, 'password': data['password']}})
+                data.update({'status': {'public': False, 'password': data['password']},'is_start':False})
                 data.pop('password')
             data.update({
                 'admin':ObjectId(user['user_id'])
@@ -48,6 +48,7 @@ async def create_room():
             await g.redis_connection.publish('rooms_info_feed',json.dumps(redis.Events.ROOM_CREATION))
 
             current_app.games[str(result.inserted_id)] = Game(str(result.inserted_id),data)
+            current_app.game_tasks[str(result.inserted_id)] = asyncio.create_task(current_app.games[str(result.inserted_id)].run())
 
             return jsonify({
                 'status':'success',

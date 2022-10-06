@@ -13,6 +13,9 @@ async def register_users(class_app,class_client):
     """
         This fixture drop existing users collection and recreate that collection and register two user 'user1' and 'user2'
     """
+    # Trigger app.before_first_request function
+    await class_client.get('/')
+
     async with class_app.app_context():
         db_instance = db.db
         await db_instance.drop_collection('users')
@@ -124,12 +127,17 @@ class TestWebSocket:
             }
 
             async with client.websocket(f'/ws/room/{room_id}',headers=headers) as socket:
-                await socket.send(json.dumps({'hello':{'merhaba':'dunya '}}))
+                data = json.loads(await socket.receive())
+                assert data[0]['event_number'] == 1
+                assert data[1]['event_number'] == 3
+                await socket.send(json.dumps({'event_number':16,'test':'test123'}))
                 await asyncio.sleep(5)
-                print('ls')
+                data = json.loads(await socket.receive())
+                assert data['event_number'] == 16
+                assert data['test'] == 'test123'
+
         except WebsocketResponseError as e:
             print(e.response)
             print(await e.response.data)
         except Exception as e :
-            print(e)
             raise e

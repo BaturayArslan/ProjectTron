@@ -2,7 +2,9 @@ import quart.flask_patch
 from pathlib import Path
 from quart import Quart, jsonify,g,current_app
 from flask_jwt_extended import JWTManager
+from motor.motor_asyncio import AsyncIOMotorClient
 import asyncio
+import aioredis
 
 from .auth.auth import auth_bp, oauth_bp
 from .rooms.rooms import rooms_bp
@@ -36,6 +38,15 @@ def create_app(test=False):
 
     @app.before_first_request
     async def init():
+
+        app.redis_connection_pool = await aioredis.from_url(current_app.config['REDIS_URL'], port=6379,
+                                             username='default', password=current_app.config['REDIS_PASSWORD'])
+        app.database_connection_pool = AsyncIOMotorClient(
+            current_app.config['MONGO_URI'],
+            connectTimeoutMS=5000,
+            wTimeoutMS=5000,
+            maxPoolSize=10,
+        )[current_app.config['DATABASE_NAME']]
         await get_redis()
         app.add_background_task(broker.listen)
         task = list(app.background_tasks.data)[0]()
@@ -43,6 +54,8 @@ def create_app(test=False):
         app.my_background_task = task
         app.publish_task = None
         app.games={}
+        app.game_tasks={}
+
 
 
     # @app.after_serving

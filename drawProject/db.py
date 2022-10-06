@@ -16,13 +16,7 @@ from .exceptions import DbError, BadRequest, RoomCreationFailed, UserJoinRoomFai
 
 def get_db():
     if 'db' not in g:
-        g.db = AsyncIOMotorClient(
-            current_app.config['MONGO_URI'],
-            connectTimeoutMS=5000,
-            wTimeoutMS=5000,
-            maxPoolSize=10,
-        )[current_app.config['DATABASE_NAME']]
-
+        g.db = current_app.database_connection_pool
     return g.db
 
 
@@ -148,7 +142,7 @@ async def join_user_to_room(user_id, room_id, room_info=None):
         'kick_vote': 0,
     }
     if not room_info:
-        room_info = await db.rooms.find_one({"_id": ObjectId(room_id)}, {'admin': 1})
+        room_info = await db.rooms.find_one({"_id": ObjectId(room_id)}, {'status.password': 0})
 
     if room_info['admin']:
         result = await db.rooms.update_one({'_id': ObjectId(room_id)},
@@ -275,3 +269,14 @@ async def is_admin(user_id,room_id):
     if str(result['admin']) == user_id:
         return True
     return False
+
+async def change_is_start(state,room_id):
+    result = db.rooms.update_one({'_id':ObjectId(room_id)},{'$set':{"status.is_start":state}})
+    if result.modified_count == 1:
+        return result
+    else:
+        raise DbError('Could Change is_start status.')
+
+async def increase_win(winner):
+    request = [UpdateOne({'_id':ObjectId(player['user_id'])},{'$inc':{'total_win':1}}) for player in winner]
+    await db.users.bulk_write(request)

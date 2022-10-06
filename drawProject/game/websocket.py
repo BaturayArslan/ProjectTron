@@ -13,12 +13,12 @@ async def join_room(room_id,user):
     try:
         # Check if user already in a room.Validate user have a right to create room.
         await db.check_user(user['user_id'])
-        room_info = await db.find_room(room_id, {'status': 1, 'admin': 1})
+        room_info = await db.find_room(room_id)
         args = websocket.args.to_dict()
-        if websocket.args.get('password','') != room_info['status']['password']:
+        if websocket.args.get('password','') != room_info['status']['password'] and room_info['status']['is_start'] is True and len(room_info['users']) >= room_info['max_user'] :
             return jsonify({
                 'status': 'error',
-                'message': 'Wrong Password.'
+                'message': 'Couldnt Join Room'
             }), 202
         await db.join_user_to_room(user['user_id'], room_id, room_info)
 
@@ -71,7 +71,7 @@ async def ws(room_id):
         except NameError:
             pass
         except DbError:
-            pass
+            return jsonify({"status": "error", "message": f"{str(e)}"}), 500
 
 
 async def _cancel_task(tasks,raise_exp=False):

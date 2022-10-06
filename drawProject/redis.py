@@ -10,8 +10,7 @@ from enum import Enum
 
 async def get_redis():
     if ("redis_rooms_pubsub" or "redis_connection") not in g:
-        connection = await aioredis.from_url(current_app.config['REDIS_URL'], port=6379,
-                                             username='default', password=current_app.config['REDIS_PASSWORD'])
+        connection = current_app.redis_connection_pool
         pubsub: aioredis.client.PubSub = connection.pubsub()
         await pubsub.subscribe('rooms_info_feed')
         g.redis_rooms_pubsub = pubsub
@@ -37,7 +36,6 @@ class Broker:
                         self.events.append(message)
                         print(message)
                         self.check_events()
-                        print('1')
                         current_app.publish_task = asyncio.create_task(self.publish(message))
                         await self.subs.join()
                 await asyncio.sleep(0.1)
@@ -54,7 +52,6 @@ class Broker:
     async def publish(self, message):
         try:
             while True:
-                print('publish entered')
                 sub = self.subs.get_nowait()
                 print('get subs')
                 await sub.put(message)

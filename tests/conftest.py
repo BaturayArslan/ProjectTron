@@ -18,7 +18,7 @@ def test_app():
 
 @pytest_asyncio.fixture(scope="class")
 def class_app():
-    app = create_app(test=True)
+    app =  create_app(test=True)
     return app
 
 @pytest_asyncio.fixture(scope="class")
