@@ -29,7 +29,7 @@ class Broker:
         try:
             pubsub = g.redis_rooms_pubsub
             while True:
-                async with async_timeout.timeout(10):
+                async with async_timeout.timeout(100000):
                     raw_message = await pubsub.get_message(ignore_subscribe_messages=True)
                     if raw_message:
                         message = json.loads(raw_message['data'])
@@ -63,7 +63,7 @@ class Broker:
         channel = asyncio.Queue()
         await self.subs.put(channel)
         print('subscribed.')
-        message = await asyncio.wait_for(channel.get(),10)
+        message = await asyncio.wait_for(channel.get(),100)
         return message
 
 

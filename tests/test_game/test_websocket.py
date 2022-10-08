@@ -4,6 +4,7 @@ import asyncio
 import json
 from quart import g,websocket,current_app
 from quart.testing import WebsocketResponseError
+from flask_jwt_extended import decode_token
 
 from drawProject import db
 from drawProject import redis
@@ -126,16 +127,28 @@ class TestWebSocket:
                 'Authorization': f'Bearer {user1["auth_token"]}'
             }
 
-            async with client.websocket(f'/ws/room/{room_id}',headers=headers) as socket:
-                data = json.loads(await socket.receive())
-                assert data[0]['event_number'] == 1
-                assert data[1]['event_number'] == 3
-                await socket.send(json.dumps({'event_number':16,'test':'test123'}))
-                await asyncio.sleep(5)
-                data = json.loads(await socket.receive())
-                assert data['event_number'] == 16
-                assert data['test'] == 'test123'
+            async with app.app_context():
+                user1_token = decode_token(user1['auth_token'])
+                async with client.websocket(f'/ws/room/{room_id}',headers=headers) as socket:
+                    data = json.loads(await socket.receive())
+                    assert data[0]['event_number'] == 1
+                    assert data[1]['event_number'] == 3
+                    assert len(app.games[room_id].players) == 1
+                    await socket.send(json.dumps({'event_number':16,'test':'test123'}))
+                    await asyncio.sleep(5)
+                    data = json.loads(await socket.receive())
+                    assert data['event_number'] == 16
+                    assert data['test'] == 'test123'
+                    recieve_task = app.games[room_id].connections[user1_token['user_id']]['receive_task']
+                    send_task = app.games[room_id].connections[user1_token['user_id']]['send_task']
 
+                #Testing clean up
+                with pytest.raises(KeyError) as excinfo:
+                    app.games[room_id].connections[user1_token['user_id']]
+                assert excinfo.type == KeyError
+                assert recieve_task.cancelled()
+                assert send_task.cancelled()
+                assert await db.check_user(user1_token['user_id'])
         except WebsocketResponseError as e:
             print(e.response)
             print(await e.response.data)

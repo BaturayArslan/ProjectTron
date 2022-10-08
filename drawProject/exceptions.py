@@ -10,3 +10,6 @@ class RoomCreationFailed(Exception):
 
 class UserJoinRoomFailed(Exception):
     pass
+
+class CheckFailed(Exception):
+    pass

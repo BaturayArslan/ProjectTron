@@ -32,7 +32,7 @@ class Game:
         self.connections[player_id] = {
             'connection': websocket,
             'send_que': asyncio.Queue(),
-            'user_name': user_name
+            'user_name': user_name,
         }
         self.connections[player_id].update({"send_task": self._create_send_task(self.connections[player_id], player_id),
                                             "receive_task": self._create_receive_task(self.connections[player_id],
@@ -80,6 +80,9 @@ class Game:
         return asyncio.create_task(task_fnc(player=player, player_id=player_id))
 
     async def disconnect(self, player_id, user_name):
+        self.players.pop(player_id)
+        self.connections.pop(player_id)
+
         player_disconnect_event = Events.set_player_leave(player_id, user_name)
         await self.broker.push_event(player_disconnect_event)
 
@@ -135,10 +138,10 @@ class Broker():
         events = parse_redis_stream_event(raw_events)
         return events
 
-    async def push_event(self, event):
+    async def push_event(self, event,id='*'):
         if type(event) != str:
             event = json.dumps(event)
-        await self.game.redis_connection.xadd(self.game._room_id, {'container': event}, id='*', maxlen=50)
+        await self.game.redis_connection.xadd(self.game._room_id, {'container': event}, id=id, maxlen=50)
 
 
 class Events():
@@ -210,7 +213,6 @@ class Events():
         return event
 
     async def player_leave(self, event):
-        self.game.players.pop(event['info']['user_id'])
         result = [
             {
                 'event_number': 2,
@@ -221,11 +223,10 @@ class Events():
                 'message': f'User {event["info"]["user_name"]} has leave room.'
             }
         ]
-        try:
-            self.game.connections.pop(event['info']['user_id'])
-            await self.game.broker.publish(result, ('broadcast', None))
-        except KeyError:
-            await self.game.broker.publish(result, ('broadcast', None))
+
+        await self.game.broker.publish(result, ('broadcast', None))
+
+
 
     @staticmethod
     def set_player_leave(user_id, user_name):

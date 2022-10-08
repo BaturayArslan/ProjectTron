@@ -11,7 +11,7 @@ from flask_jwt_extended.exceptions import NoAuthorizationError
 from flask_jwt_extended import decode_token
 from datetime import datetime
 
-from .exceptions import DbError, BadRequest, RoomCreationFailed, UserJoinRoomFailed
+from .exceptions import DbError, BadRequest, RoomCreationFailed, UserJoinRoomFailed,CheckFailed
 
 
 def get_db():
@@ -106,6 +106,8 @@ async def delete_room(room_id):
     else:
         raise DbError('Couldnt Delete Room.')
 
+async def delete_player(room_id,user_id):
+    result = await db.rooms.update_one({"_id":ObjectId(room_id)},{'$pull':{}})
 
 async def find_room(id, project=None):
     result = await db.rooms.find_one({"_id": ObjectId(id)}, project)
@@ -127,10 +129,10 @@ async def get_rooms_info():
 async def check_user(id):
     cursor = db.rooms.find({"users._id": ObjectId(id)}, {'_id': 1})
     result = await cursor.to_list(length=100)
-    if len(result) == 0:
+    if len(result) <= 1:
         return True
     else:
-        raise DbError('You Already in a room.')
+        raise CheckFailed('You Already in a another room.')
 
 
 async def join_user_to_room(user_id, room_id, room_info=None):

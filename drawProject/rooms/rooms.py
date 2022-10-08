@@ -41,7 +41,7 @@ async def create_room():
             })
 
             result = await db.create_room(data)
-            await db.join_user_to_room(user['user_id'], result.inserted_id)
+            #await db.join_user_to_room(user['user_id'], result.inserted_id)
 
             #Publish an event for refresh_room_info view subscribers.
             redis.Events.set_room_creation(result.inserted_id,data,user['user_id'])
@@ -61,12 +61,12 @@ async def create_room():
             'status': 'error',
             'message': form.errors
         }), 400
-    except UserJoinRoomFailed as e:
-        await db.delete_room(result.inserted_id)
-        return jsonify({
-            'status':'error',
-            'message': f'{str(e)}'
-        }),500
+    # except UserJoinRoomFailed as e:
+    #     await db.delete_room(result.inserted_id)
+    #     return jsonify({
+    #         'status':'error',
+    #         'message': f'{str(e)}'
+    #     }),500
     except DbError as e :
         return jsonify({"status": "error", "message": f"{str(e)}"}), 500
     except Exception as e:
