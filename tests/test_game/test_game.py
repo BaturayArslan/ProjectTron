@@ -4,6 +4,7 @@ import pytest
 import pytest_asyncio
 from quart import current_app
 from flask_jwt_extended import decode_token
+from bson import ObjectId
 
 from drawProject import redis,db
 from drawProject.utils.utils import parse_redis_stream_event
@@ -89,11 +90,32 @@ class TestGame:
             events = await app.games[room_id].broker.get_events()
             assert app.games[room_id].broker.last_event_id == '9000000000000-1'
 
-            #await asyncio.gather(packet1[0],packet2[0])
+    async def test_update_is_start(self,class_client,class_app,get_user,get_room):
+        app = class_app
+        client = class_client
+        user1, user2 = get_user
+        room_id = get_room
+        async with app.app_context():
+            user1_token = decode_token(user1['auth_token'])
+            user2_token = decode_token(user2['auth_token'])
+            await app.games[room_id].update_is_start(True)
+            result = await db.db.rooms.find_one({'_id':ObjectId(room_id)},{"status":1})
+            assert result['status']['is_start']
+            assert app.games[room_id].is_start
 
-
-
-
+    async def test_reset_game(self,class_client,class_app,get_user,get_room):
+        app = class_app
+        client = class_client
+        user1, user2 = get_user
+        room_id = get_room
+        async with app.app_context():
+            user1_token = decode_token(user1['auth_token'])
+            user2_token = decode_token(user2['auth_token'])
+            fake_winners = [ app.games[room_id].players[key] for key in app.games[room_id].players]
+            await app.games[room_id].reset_game(fake_winners)
+            for player_id in app.games[room_id].players:
+                assert app.games[room_id].players[player_id]['win_round'] ==1
+            await app.games[room_id].remove_room()
 
     async def get_tasks(self,client,headers1,headers2,room_id):
         receive_que1, send_que1, receive_que2, send_que2 = self.create_ques(4)

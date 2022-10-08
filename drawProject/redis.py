@@ -29,7 +29,7 @@ class Broker:
         try:
             pubsub = g.redis_rooms_pubsub
             while True:
-                async with async_timeout.timeout(100000):
+                async with async_timeout.timeout(10):
                     raw_message = await pubsub.get_message(ignore_subscribe_messages=True)
                     if raw_message:
                         message = json.loads(raw_message['data'])
@@ -42,18 +42,16 @@ class Broker:
         except asyncio.CancelledError as e:
             print('Listen task cancelled.')
             await current_app.publish_task
-        except asyncio.TimeoutError as e:
-            await current_app.handle_background_exception(e)
-        finally:
-            if current_app.my_background_task.done() and current_app.publish_task.done():
-                print('Clean Up succesfull.')
+        except Exception as e:
+            #Rerun if any error occurs.
+            current_app.add_background_task(self.listen)
+            print('Something went wrong on broker.listen')
 
 
     async def publish(self, message):
         try:
             while True:
                 sub = self.subs.get_nowait()
-                print('get subs')
                 await sub.put(message)
                 self.subs.task_done()
         except Exception as e:
@@ -63,7 +61,7 @@ class Broker:
         channel = asyncio.Queue()
         await self.subs.put(channel)
         print('subscribed.')
-        message = await asyncio.wait_for(channel.get(),100)
+        message = await asyncio.wait_for(channel.get(),130)
         return message
 
 

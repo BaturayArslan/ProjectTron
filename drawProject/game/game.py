@@ -92,7 +92,7 @@ class Game:
 
     async def update_is_start(self, state):
         self.is_start = state
-        await db.change_is_start(self.is_start)
+        await db.change_is_start(self.is_start,self._room_id)
 
     async def remove_room(self):
         game_task = current_app.game_tasks[self._room_id]

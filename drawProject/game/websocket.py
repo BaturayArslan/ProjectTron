@@ -13,7 +13,7 @@ async def join_room(room_id,user):
     try:
         args = websocket.args.to_dict()
         room_info = await db.find_room(room_id)
-        if websocket.args.get('password','') != room_info['status']['password'] and room_info['status']['is_start'] is True and len(room_info.get('users',[])) >= room_info['max_user'] :
+        if websocket.args.get('password','') != room_info['status']['password'] or room_info['status']['is_start'] is True or len(room_info.get('users',[])) >= room_info['max_user'] :
             return jsonify({
                 'status': 'error',
                 'message': 'Couldnt Join Room.Room is full or game is start'

@@ -273,7 +273,7 @@ async def is_admin(user_id,room_id):
     return False
 
 async def change_is_start(state,room_id):
-    result = db.rooms.update_one({'_id':ObjectId(room_id)},{'$set':{"status.is_start":state}})
+    result = await db.rooms.update_one({'_id':ObjectId(room_id)},{'$set':{"status.is_start":state}})
     if result.modified_count == 1:
         return result
     else:
@@ -281,4 +281,5 @@ async def change_is_start(state,room_id):
 
 async def increase_win(winner):
     request = [UpdateOne({'_id':ObjectId(player['user_id'])},{'$inc':{'total_win':1}}) for player in winner]
-    await db.users.bulk_write(request)
+    if len(request) != 0:
+        await db.users.bulk_write(request)
