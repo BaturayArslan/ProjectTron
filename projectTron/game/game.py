@@ -4,8 +4,8 @@ import async_timeout
 from quart import g, current_app
 from collections import defaultdict
 from datetime import datetime
-from drawProject.utils.utils import parse_redis_stream_event
-from drawProject import db
+from projectTron.utils.utils import parse_redis_stream_event
+from projectTron import db
 
 
 class Game:

@@ -1,8 +1,10 @@
 import quart.flask_patch
 from pathlib import Path
-from quart import Quart, jsonify,g,current_app
-from flask_jwt_extended import JWTManager
+from quart import Quart, jsonify,g,current_app,url_for,redirect
+from flask_jwt_extended import JWTManager,get_jwt,jwt_required
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import DuplicateKeyError
+from collections import defaultdict
 import asyncio
 import aioredis
 
@@ -11,6 +13,8 @@ from .rooms.rooms import rooms_bp
 from .user.user import user_bp
 from .game.websocket import websocket_bp
 from .redis import broker,get_redis
+from .error_handlers import dberror_handler,duplicate_key_handler,bad_request_handler
+from .exceptions import DbError,BadRequest
 
 def create_app(test=False):
     APP_DIR = Path(__file__).parent
@@ -18,15 +22,15 @@ def create_app(test=False):
 
     app = Quart(__name__, static_folder=str(STATIC_FOLDER))
     if test:
-        app.config.from_object('drawProject.config.TestConfig')
+        app.config.from_object('projectTron.config.TestConfig')
     else:
-        app.config.from_object('drawProject.config.DevConfig')
+        app.config.from_object('projectTron.config.DevConfig')
 
     jwt = JWTManager(app)
 
     @jwt.expired_token_loader
-    def my_expired_token_callback(jwt_header, jwt_paylaod):
-        return jsonify({"status": "error", "message": "Expired Token."}), 402
+    def my_expired_token_callback(jwt_header, jwt_payload):
+        return jsonify({"status": "error", "message": "Expired Token.","type":jwt_payload['type']}), 402
 
     @jwt.invalid_token_loader
     def my_invalid_token_callback(message):
@@ -35,6 +39,11 @@ def create_app(test=False):
     @jwt.unauthorized_loader
     def my_missing_token_callback(messge):
         return jsonify({"status": "error", "message": "Missing Token."}), 402
+
+    app.register_error_handler(DbError,dberror_handler)
+    app.register_error_handler(DuplicateKeyError,duplicate_key_handler)
+    app.register_error_handler(BadRequest, bad_request_handler)
+
 
     @app.before_first_request
     async def init():
@@ -56,12 +65,19 @@ def create_app(test=False):
         app.games={}
         app.game_tasks={}
 
+    @jwt_required()
+    async def require_complete_login():
+        """If user login with oauth provider some information about player not complete.This middleware enforce complete login."""
+        token = get_jwt()
+        if not token.get('user_name',None):
+            return redirect(url_for('complete_login.complete'))
 
-
-    # @app.after_serving
-    # async def clear():
-    #     app.my_background_task.cancel()
-    #     await app.my_background_task
+    app.before_request_funcs = defaultdict(list)
+    app.before_request_funcs.update({
+        'room':[require_complete_login],
+        'user':[require_complete_login],
+        'websocket': [require_complete_login]
+    })
 
 
     app.register_blueprint(auth_bp)
@@ -69,6 +85,7 @@ def create_app(test=False):
     app.register_blueprint(rooms_bp)
     app.register_blueprint(user_bp)
     app.register_blueprint(websocket_bp)
+
 
 
     return app

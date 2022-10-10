@@ -1,4 +1,4 @@
-from drawProject.factory import  create_app
+from projectTron.factory import  create_app
 
 if __name__ == '__main__':
     app = create_app(test=True)

@@ -10,10 +10,10 @@ import base64
 import weakref
 from quart import g, current_app
 
-from drawProject import db
-from drawProject import redis
-from drawProject import factory
-from drawProject.utils.utils import objectid_to_str
+from projectTron import db
+from projectTron import redis
+from projectTron import factory
+from projectTron.utils.utils import objectid_to_str
 
 
 @pytest_asyncio.fixture(scope='class')

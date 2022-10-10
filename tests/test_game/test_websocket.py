@@ -6,8 +6,8 @@ from quart import g,websocket,current_app
 from quart.testing import WebsocketResponseError
 from flask_jwt_extended import decode_token
 
-from drawProject import db
-from drawProject import redis
+from projectTron import db
+from projectTron import redis
 
 @pytest_asyncio.fixture(scope='class')
 async def register_users(class_app,class_client):

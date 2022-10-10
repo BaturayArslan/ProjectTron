@@ -29,7 +29,7 @@ async def register_user(data):
     data{
         "email": str,
         "username":str,
-        "password": str,
+        "password": str,optional (oauth player doesnt have password)
         "country": str | ""
         "avatar": int
 
@@ -283,3 +283,10 @@ async def increase_win(winner):
     request = [UpdateOne({'_id':ObjectId(player['user_id'])},{'$inc':{'total_win':1}}) for player in winner]
     if len(request) != 0:
         await db.users.bulk_write(request)
+
+async def complete_login(data,email):
+    result = await db.users.update_one({'email':email},data)
+    if result.modified_count == 1:
+        return True
+    else:
+        DbError('Couldn Complete Login')

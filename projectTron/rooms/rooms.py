@@ -11,8 +11,8 @@ import json
 
 from ..exceptions import DbError,RoomCreationFailed,UserJoinRoomFailed
 from ..utils.utils import string_to_int
-from drawProject import db
-from drawProject import redis
+from projectTron import db
+from projectTron import redis
 from ..game.game import Game
 
 rooms_bp = Blueprint("room", __name__, url_prefix="/room")

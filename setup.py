@@ -1,8 +1,8 @@
 from setuptools import setup
 
 setup(
-    name='drawProject',
-    packages=['drawProject'],
+    name='projectTron',
+    packages=['projectTron'],
     include_package_data=True,
     install_requires=[
         'flask',

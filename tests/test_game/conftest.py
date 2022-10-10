@@ -2,9 +2,9 @@ import pytest
 import pytest_asyncio
 import asyncio
 
-from drawProject import db,redis
+from projectTron import db,redis
 
-from drawProject import factory
+from projectTron import factory
 @pytest_asyncio.fixture(scope='class')
 async def register_users(class_app,class_client):
     """

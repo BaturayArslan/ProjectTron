@@ -2,9 +2,9 @@ import pytest
 import pytest_asyncio
 from flask_jwt_extended import decode_token
 
-from drawProject import db
-from drawProject import redis
-from drawProject.utils import utils
+from projectTron import db
+from projectTron import redis
+from projectTron.utils import utils
 
 @pytest_asyncio.fixture(scope='class')
 async def register_users(class_app,class_client):

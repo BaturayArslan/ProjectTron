@@ -1,4 +1,4 @@
-from drawProject import db
+from projectTron import db
 import pytest
 import base64
 import json
@@ -9,10 +9,13 @@ from quart import g, current_app
 
 
 @pytest_asyncio.fixture(scope="class")
-async def register_fixture(class_app):
+async def register_fixture(class_app,class_client):
     """
         Drop Already Exist users collection and create refresh one
     """
+    # Trigger app.before_first_request function
+    await class_client.get('/')
+
     db_instance = db.db
     async with class_app.app_context():
         await db_instance.drop_collection('users')
@@ -21,7 +24,10 @@ async def register_fixture(class_app):
 
 
 @pytest_asyncio.fixture
-async def login_response(client, app):
+async def login_response(class_client, class_app):
+    client = class_client
+    app = class_app
+
     data = {
         'email': 'test@test.com',
         'password': 'testpassword'
@@ -29,7 +35,6 @@ async def login_response(client, app):
     login_response = await client.post("/auth/login", form=data)
     login_response_json = await login_response.get_json()
     assert login_response.status_code == 200
-    assert login_response_json['status'] == "success"
     assert "auth_token" in login_response_json
     assert "refresh_token" in login_response_json
     return login_response, login_response_json
@@ -37,6 +42,7 @@ async def login_response(client, app):
 
 @pytest_asyncio.fixture(scope="class")
 async def login_fixture(class_app, class_client):
+    await class_client.get('/')
     db_instance = db.db
     async with class_app.app_context():
         await db_instance.drop_collection('users')
@@ -139,11 +145,13 @@ class TestRegister:
 
         )
     ])
-    async def test_register(self, client, data, headers, path, expected):
+    async def test_register(self, class_client, data, headers, path, expected):
+        client = class_client
+
         response = await client.post(path, form=data, headers=headers)
         response_json = await response.get_json()
+        data = await response.data
         assert response.status_code == expected['status_code']
-        assert response_json['status'] == expected['status']
         assert response_json['message'] == expected['message']
 
 
@@ -152,7 +160,9 @@ class TestRegister:
 @pytest.mark.usefixtures("login_fixture")
 @pytest.mark.asyncio
 class TestLogin:
-    async def test_succesfull_login(self, client, app):
+    async def test_succesfull_login(self, class_client, class_app):
+        client = class_client
+        app = class_app
         data = {
             'email': 'test@test.com',
             'password': 'testpassword'
@@ -160,9 +170,8 @@ class TestLogin:
         response = await client.post("/auth/login", form=data)
         response_json = await response.get_json()
         assert response.status_code == 200
-        assert response_json['status'] == "success"
         access_header, access_claims, access_sign = response_json['auth_token'].split(".")
-        decoded_access_claims = json.loads(base64.b64decode(access_claims + "="))
+        decoded_access_claims = json.loads(base64.b64decode(access_claims + "=="))
         assert decoded_access_claims['sub'] == "test@test.com"
         assert decoded_access_claims['type'] == "access"
         exp_date = datetime.fromtimestamp(decoded_access_claims['exp'])
@@ -177,7 +186,9 @@ class TestLogin:
         issued_date = datetime.fromtimestamp(decoded_refresh_claims['iat'])
         assert str(exp_date - issued_date) == f"{str(app.config['JWT_REFRESH_TOKEN_EXPIRES'])}"
 
-    async def test_invalid_credentials_login(self, client, app):
+    async def test_invalid_credentials_login(self, class_client, class_app):
+        client = class_client
+        app = class_app
         data = {
             'email': 'test@test.com',
             'password': 'invalidpassword'
@@ -185,14 +196,16 @@ class TestLogin:
         response = await client.post("/auth/login", form=data)
         response_json = await response.get_json()
         assert response.status_code == 202
-        assert response_json['status'] == "error"
         assert response_json['message'] == "Username or Password in correct. TRY AGAIN."
 
 
 @pytest.mark.usefixtures("login_fixture")
 @pytest.mark.asyncio
 class TestLogout:
-    async def test_logout(self, client, app):
+    async def test_logout(self, class_client, class_app):
+        client = class_client
+        app = class_app
+
         data = {
             'email': 'test@test.com',
             'password': 'testpassword'
@@ -200,7 +213,6 @@ class TestLogout:
         login_response = await client.post("/auth/login", form=data)
         login_response_json = await login_response.get_json()
         assert login_response.status_code == 200
-        assert login_response_json['status'] == "success"
         assert "auth_token" in login_response_json
         assert "refresh_token" in login_response_json
 
@@ -213,9 +225,11 @@ class TestLogout:
         response = await client.post("/auth/logout", headers=headers, form=logout_data)
         response_json = await response.get_json()
         assert response.status_code == 200
-        assert response_json['status'] == "success"
 
-    async def test_logout_without_access_token(self, client, app, login_response):
+    async def test_logout_without_access_token(self, class_client, class_app, login_response):
+        client = class_client
+        app = class_app
+
         _login_response, _login_response_json = login_response
         data = {
             "refresh_token": _login_response_json['refresh_token']
@@ -223,10 +237,12 @@ class TestLogout:
         response = await client.post("/auth/logout", form=data)
         response_json = await response.get_json()
         assert response.status_code == 402
-        assert response_json['status'] == "error"
         assert response_json['message'] == "Missing Token."
 
-    async def test_logout_without_refresh_token(self, client, app, login_response):
+    async def test_logout_without_refresh_token(self, class_client, class_app, login_response):
+        client = class_client
+        app = class_app
+
         _login_response, _login_response_json = login_response
 
         headers = {
@@ -235,14 +251,16 @@ class TestLogout:
         response = await client.post("/auth/logout", headers=headers)
         response_json = await response.get_json()
         assert response.status_code == 400
-        assert response_json['status'] == "error"
         assert response_json['message'] == "Missing refresh token."
 
 
 @pytest.mark.usefixtures("login_fixture")
 @pytest.mark.asyncio
 class TestRefreshToken:
-    async def test_refresh_token(self, client, app,login_response):
+    async def test_refresh_token(self, class_client, class_app,login_response):
+        client = class_client
+        app = class_app
+
         _login_response, _login_response_json = login_response
 
         headers = {
@@ -252,7 +270,6 @@ class TestRefreshToken:
         response = await client.post("/auth/refresh", headers=headers)
         response_json = await response.get_json()
         assert response.status_code == 200
-        assert response_json['status'] == "success"
         access_header, access_claims, access_sign = response_json['auth_token'].split(".")
         decoded_access_claims = json.loads(base64.b64decode(access_claims + "="))
         assert decoded_access_claims['sub'] == "test@test.com"
@@ -261,7 +278,10 @@ class TestRefreshToken:
         issued_date = datetime.fromtimestamp(decoded_access_claims['iat'])
         assert str(exp_date - issued_date) == f"{str(app.config['JWT_ACCESS_TOKEN_EXPIRES'])}"
 
-    async def test_invalid_refresh_token(self, client, app):
+    async def test_invalid_refresh_token(self, class_client, class_app):
+        client = class_client
+        app = class_app
+
         payload = {
             "sub": "test@test.com",
 

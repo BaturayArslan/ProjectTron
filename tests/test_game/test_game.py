@@ -6,8 +6,8 @@ from quart import current_app
 from flask_jwt_extended import decode_token
 from bson import ObjectId
 
-from drawProject import redis,db
-from drawProject.utils.utils import parse_redis_stream_event
+from projectTron import redis,db
+from projectTron.utils.utils import parse_redis_stream_event
 
 @pytest_asyncio.fixture()
 async def get_sockets(class_app,class_client,get_user,get_room):

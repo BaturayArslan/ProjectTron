@@ -3,9 +3,9 @@ import json
 from quart import g,current_app,websocket,Blueprint,jsonify
 from flask_jwt_extended import decode_token,get_jwt,jwt_required
 
-from drawProject import db
-from drawProject import redis
-from drawProject.exceptions import DbError,CheckFailed
+from projectTron import db
+from projectTron import redis
+from projectTron.exceptions import DbError,CheckFailed
 
 websocket_bp = Blueprint("websocket", __name__, url_prefix="/ws")
 
