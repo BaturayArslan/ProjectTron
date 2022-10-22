@@ -5,7 +5,7 @@ from flask_jwt_extended import JWTManager,get_jwt,jwt_required
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError
 from collections import defaultdict
-import asyncio
+from quart_cors import cors
 import aioredis
 
 from .auth.auth import auth_bp, oauth_bp
@@ -21,6 +21,8 @@ def create_app(test=False):
     STATIC_FOLDER = APP_DIR / 'static'
 
     app = Quart(__name__, static_folder=str(STATIC_FOLDER))
+    app = cors(app,allow_origin='*',allow_headers='*',allow_methods=['POST','GET'])
+
     if test:
         app.config.from_object('projectTron.config.TestConfig')
     else:

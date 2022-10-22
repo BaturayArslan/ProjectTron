@@ -23,7 +23,7 @@ class DevConfig(BaseConfig):
     DATABASE_NAME = "draw_dev"
 
 class TestConfig(BaseConfig):
-    DEBUG = True
+    DEBUG = False
     TESTING = True
     DATABASE_NAME = 'draw_test'
     JWT_SECRET_KEY = 'safira'

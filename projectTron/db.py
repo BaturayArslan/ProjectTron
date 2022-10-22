@@ -37,7 +37,6 @@ async def register_user(data):
     """
     aditional_info = {
         "last_login": datetime.utcnow(),
-        "correnct_answer": 0,
         "total_win": 0,
         "friends": []
     }
@@ -54,7 +53,7 @@ async def find_user(email, project):
     if result is not None:
         return result
     else:
-        raise DbError('Please Try Again.')
+        raise DbError('Email or Password is incorrect.')
 
 
 async def create_login_session(token, email, user_id):

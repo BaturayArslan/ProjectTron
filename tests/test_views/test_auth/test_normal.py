@@ -47,7 +47,7 @@ async def login_fixture(class_app, class_client):
     async with class_app.app_context():
         await db_instance.drop_collection('users')
         await db_instance.create_collection('users')
-        await db_instance.users.create_index("emial", unique=True)
+        await db_instance.users.create_index("email", unique=True)
         data = {
             "email": "test@test.com",
             "username": "test",
