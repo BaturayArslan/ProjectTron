@@ -140,7 +140,7 @@ async def refresh():
 async def redirect_authorization():
     facebook = OauthProvider().provider
     return redirect(
-        facebook.get_authorize_url(redirect_uri=url_for("oauth.authorize", _scheme='https'))
+        facebook.get_authorize_url(redirect_uri=url_for("oauth.authorize", _scheme='https'),scope='email')
     )
 
 
@@ -165,7 +165,8 @@ async def authorize():
               'redirect_uri': url_for("oauth.authorize", _scheme='https')},
         decoder=decode_json
     )
-    me = oauth_session.get('me', params={'fields': 'email'}).json()
+    me = oauth_session.get('user', params={'fields': 'email'}).json()
+
     user = await db.db.users.find_one({'email':me['email']},{"_id": 1, "email": 1,'username':1})
     if "email" in user.get('email',None):
         # User already registered so just login user
@@ -178,20 +179,14 @@ async def authorize():
             additional_claims={'user_id':str(user['_id']),'user_name':user['username']}
         )
         result = await db.create_login_session(refresh_token, user['email'], user['_id'])
-        return make_response(jsonify({
-            'auth_token': access_token,
-            'refresh_token': refresh_token
-        }), 200)
+        return redirect("https://" + current_app.config['SERVER_NAME'] + f"/static/token.html?auth_token={access_token}&refresh_token={refresh_token}")
     else:
         # User not registered before register and login user
         me.pop('id')
         register_result = await db.register_user(me)
         access_token = create_access_token(identity=me['email'])
         refresh_token = create_refresh_token(identity=me['email'])
-        return make_response(jsonify({
-            'auth_token': access_token,
-            'refresh_token': refresh_token
-        }), 200)
+        return redirect("https://" + current_app.config['SERVER_NAME'] + f"/static/token.html?auth_token={access_token}&refresh_token={refresh_token}")
 
 
 @complete_login_bp.route('/complete',methods=['POST'])
@@ -229,7 +224,7 @@ async def complete():
 
         result = await db.create_login_session(refresh_token, user['email'], user['_id'])
 
-        return make_response(jsonify({
+        return await make_response(jsonify({
             'auth_token': access_token,
             'refresh_token': refresh_token
         }), 200)
