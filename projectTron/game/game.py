@@ -21,7 +21,7 @@ class Game:
         self._room_id = room_id
         self.max_user = data['max_user']
         self.max_round = data['max_point']
-        self.current_round = 1
+        self.current_round = 0
         self.is_in_round = False
         self.is_start = False
         self.teams = defaultdict(list)
@@ -78,6 +78,7 @@ class Game:
                 raise
 
         return asyncio.create_task(task_fnc(player=player, player_id=player_id))
+	
 
     async def disconnect(self, player_id, user_name):
         self.players.pop(player_id)
@@ -105,7 +106,7 @@ class Game:
         await db.increase_win(winner)
         for player_id in self.players:
             self.players[player_id].update({'win_round': 0, 'is_ready': False})
-        self.current_round = 1
+        self.current_round = 0
         self.is_in_round = False
         self.is_start = False
         self.teams = defaultdict(list)
@@ -449,7 +450,8 @@ class Events():
             await asyncio.sleep(1)
 
         self.game.is_in_round = True
-        self.game.current_round += 1
+        self.game.current_round = self.game.current_round + 1
+        await db.update_round(self.game.current_round,self.game._room_id)
         await self.game.broker.publish({"event_number": 12}, ('broadcast', None))
 
         message = Events.set_system_message("Fight")

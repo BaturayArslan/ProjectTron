@@ -4,9 +4,11 @@ from bson import ObjectId
 from datetime import datetime
 import async_timeout
 import asyncio
+import json
 
 from projectTron import db
 from projectTron import redis
+from projectTron.utils.utils import parse_redis_stream_event
 from ..exceptions import DbError, BadRequest
 from ..utils.utils import redis_to_normal_timestamp,normal_to_redis_timestamp,objectid_to_str
 user_bp = Blueprint('user', __name__, url_prefix='/user')
@@ -24,12 +26,7 @@ async def user_profile():
         return jsonify({
             'status': 'success',
             'message': user_info
-        })
-    except DbError as e:
-        return jsonify({
-            'status': 'error',
-            'message': f'{str(e)}'
-        }), 400
+        }),200
     except Exception as e:
         raise e
 
@@ -41,8 +38,8 @@ async def add_friend():
         user = get_jwt()
         arguments = request.args
         friend_id = arguments.get('friend_id', None)
-        avatar = int(arguments.get('avatar')) if arguments.get('avatar', None) else None
-        if not (friend_id and avatar):
+        avatar = int(arguments.get('avatar')) if arguments.get('avatar') else None
+        if not (friend_id or avatar):
             return jsonify({'status': 'error', 'message': 'friend_id or avatar parameter missing.'}), 400
         await db.add_friend(user['user_id'], friend_id, avatar)
         updated_friends = await db.find_user(user['sub'], {'_id': 0, 'friends': 1})
@@ -50,13 +47,6 @@ async def add_friend():
             'status': 'success',
             'message': objectid_to_str(updated_friends)
         })
-    except DbError as e:
-        return jsonify({
-            'status': 'error',
-            'message': f'{str(e)}'
-        }), 500
-    except ValueError as e:
-        return jsonify({'status': 'error', 'message': 'friend_id or avatar parameter invalid.'}), 400
     except Exception as e:
         raise e
 
@@ -90,6 +80,7 @@ async def delete_friend():
 async def send_message():
     try:
         user = get_jwt()
+        pubsub,redis_connection = await redis.get_redis()
         message = await request.get_json()
         friend_id = message.get('friend_id', None)
         msg = message.get('msg', None)
@@ -99,7 +90,8 @@ async def send_message():
         await db.send_message(user['user_id'], friend_id, {'msg':msg,'timestamp':timestamp})
 
         redis.Events.set_message_sends(user['user_id'],msg,timestamp,friend_id)
-        await g.redis_connection.xadd(name=friend_id,fields=redis.Events.MESSAGE_SENDS,id=normal_to_redis_timestamp(timestamp),maxlen=30)
+        event = json.dumps(redis.Events.MESSAGE_SENDS)
+        await redis_connection.xadd(name=friend_id,fields={'container':event},id=normal_to_redis_timestamp(timestamp),maxlen=30)
 
         return jsonify({
             'status': 'success',
@@ -141,19 +133,19 @@ async def get_messages():
 async def update_messages():
     try:
         user = get_jwt()
+        pubsub,redis_connection = await redis.get_redis()
         arguments = request.args
-        friend_id = arguments.get('friend_id', None)
-        timestamp = float(arguments.get('timestamp')) if arguments.get('timestamp',None) else None
-        if not (friend_id or timestamp):
+        timestamp = float(arguments.get('timestamp')) if arguments.get('timestamp') else None
+        if not timestamp:
             return jsonify({'status': 'error', 'message': 'friend_id parameter missing.'}), 400
 
-        new_message  = await g.redis_connection.xread({user['user_id']:normal_to_redis_timestamp(timestamp)})
-        if new_message:
-            return jsonify({'status':'success','message':new_message}),200
+        new_message  = await redis_connection.xread({user['user_id']:normal_to_redis_timestamp(timestamp)})
+        if len(new_message) != 0:
+            return jsonify({'status':'success','message':parse_redis_stream_event(new_message)}),200
         else:
             async with async_timeout.timeout(120.0):
-                new_message = await g.redis_connection.xread({user['user_id']: normal_to_redis_timestamp(timestamp)},block=120)
-                return jsonify({'status': 'success', 'message': new_message}), 200
+                new_message = await redis_connection.xread({user['user_id']: normal_to_redis_timestamp(timestamp)},block=110000)
+                return jsonify({'status': 'success', 'message': parse_redis_stream_event(new_message) }), 200
 
 
 
@@ -163,8 +155,16 @@ async def update_messages():
             'message': f'{str(e)}'
         }), 500
     except asyncio.TimeoutError as e:
-        return jsonify({'status':'error','messsage': 'timeout.'}), 408
+        return jsonify({'status':'error','messsage': 'timeout.'}), 400
     except Exception as e:
         raise e
 
 # TODO :: implement an endponit for updating last_opened field
+@user_bp.route('/last_opened',methods=['GET'])
+async def update_last_opened():
+    user = get_jwt()
+    friend_id = request.args.get('friend_id',None)
+    if not friend_id:
+        return jsonify({'message':'friend_id parameter missing.'}),400
+    timestamp = await db.update_last_opened(user['user_id'],friend_id)
+    return jsonify({'message':timestamp}),200

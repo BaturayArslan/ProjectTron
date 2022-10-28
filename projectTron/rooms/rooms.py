@@ -32,9 +32,9 @@ async def create_room():
 
             if data['password'] == "":
                 data.pop('password')
-                data.update({'status': {'public': True, 'password': '','is_start':False}})
+                data.update({'status': {'public': True, 'password': '','is_start':False,'current_round':0}})
             else:
-                data.update({'status': {'public': False, 'password': data['password']},'is_start':False})
+                data.update({'status': {'public': False, 'password': data['password']},'is_start':False,'current_round':0})
                 data.pop('password')
             data.update({
                 'admin':ObjectId(user['user_id'])

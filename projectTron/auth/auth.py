@@ -33,7 +33,7 @@ from projectTron import db
 
 auth_bp = Blueprint("auth", __name__, url_prefix='/auth')
 oauth_bp = Blueprint('oauth', __name__, url_prefix='/oauth')
-complete_login_bp = Blueprint('complete_login',__name__,url_prefix='complete_login')
+complete_login_bp = Blueprint('complete_login',__name__,url_prefix='/complete_login')
 
 
 class OauthProvider:
@@ -132,8 +132,11 @@ async def refresh():
         return jsonify({"message": 'Please login again.'}), 202
 
     identity = refresh_token['sub']
-    accesses_token = create_access_token(identity=identity)
-    return jsonify({'auth_token': accesses_token}), 200
+    access_token = create_access_token(
+            identity=identity,
+            additional_claims= {'user_id':refresh_token['user_id'],'user_name':refresh_token['user_name']}
+        )
+    return jsonify({'auth_token': access_token}), 200
 
 
 @oauth_bp.route('/', methods=['GET'])
@@ -165,10 +168,10 @@ async def authorize():
               'redirect_uri': url_for("oauth.authorize", _scheme='https')},
         decoder=decode_json
     )
-    me = oauth_session.get('user', params={'fields': 'email'}).json()
+    me = oauth_session.get('me', params={'fields': 'email'}).json()
 
     user = await db.db.users.find_one({'email':me['email']},{"_id": 1, "email": 1,'username':1})
-    if "email" in user.get('email',None):
+    if user:
         # User already registered so just login user
         access_token = create_access_token(
             identity=user['email'],
@@ -189,18 +192,18 @@ async def authorize():
         return redirect("https://" + current_app.config['SERVER_NAME'] + f"/static/token.html?auth_token={access_token}&refresh_token={refresh_token}")
 
 
-@complete_login_bp.route('/complete',methods=['POST'])
+@oauth_bp.route('/complete',methods=['POST'])
 @jwt_required()
 async def complete():
     #data = {
     #    'avatar':int,
-    #    'user_name':str,
+    #    'username':str,
     #    'country':None
     #}
     token = get_jwt()
     form_data = await request.form
     data = form_data.to_dict()
-    form = RegistrationForm(form_data)
+    form = CompleteLoginForm(form_data)
     if form.validate():
 
         try:
@@ -210,16 +213,16 @@ async def complete():
         except Exception as e:
             data['country'] = ''
 
-        await db.complete_login(data,token['email'])
-        user = await db.db.users.find_one({'email':token['email']})
+        await db.complete_login(data,token['sub'])
+        user = await db.db.users.find_one({'email':token['sub']})
 
         access_token = create_access_token(
             identity=user['email'],
-            additional_claims={'user_id': str(user['_id']), 'user_name': user['username']}
+            additional_claims={'user_id': str(user['_id']), 'user_name': data['username']}
         )
         refresh_token = create_refresh_token(
             identity=user['email'],
-            additional_claims={'user_id': str(user['_id']), 'user_name': user['username']}
+            additional_claims={'user_id': str(user['_id']), 'user_name': data['username']}
         )
 
         result = await db.create_login_session(refresh_token, user['email'], user['_id'])

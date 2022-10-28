@@ -1,7 +1,7 @@
 import quart.flask_patch
 from pathlib import Path
-from quart import Quart, jsonify,g,current_app,url_for,redirect
-from flask_jwt_extended import JWTManager,get_jwt,jwt_required
+from quart import Quart, jsonify,g,current_app,url_for,redirect,request
+from flask_jwt_extended import JWTManager,get_jwt,jwt_required,verify_jwt_in_request
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError
 from collections import defaultdict
@@ -70,15 +70,22 @@ def create_app(test=False):
     @jwt_required()
     async def require_complete_login():
         """If user login with oauth provider some information about player not complete.This middleware enforce complete login."""
+        if(request.method == 'OPTIONS'):
+            return
         token = get_jwt()
         if not token.get('user_name',None):
             return redirect(url_for('complete_login.complete'))
+    
+    @app.before_request
+    async def respond_to_options():
+        if(request.method == 'OPTIONS'):
+            return
 
     app.before_request_funcs = defaultdict(list)
     app.before_request_funcs.update({
         'room':[require_complete_login],
         'user':[require_complete_login],
-        'websocket': [require_complete_login]
+        'websocket': [require_complete_login],
     })
 
 

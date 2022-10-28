@@ -1,3 +1,4 @@
+from unittest import result
 import click
 import os
 import jwt
@@ -10,8 +11,9 @@ from datetime import datetime
 from flask_jwt_extended.exceptions import NoAuthorizationError
 from flask_jwt_extended import decode_token
 from datetime import datetime
+from projectTron.utils.utils import objectid_to_str
 
-from .exceptions import DbError, BadRequest, RoomCreationFailed, UserJoinRoomFailed,CheckFailed
+from .exceptions import DbError, BadRequest, RoomCreationFailed, UserJoinRoomFailed, CheckFailed
 
 
 def get_db():
@@ -36,7 +38,7 @@ async def register_user(data):
     }
     """
     aditional_info = {
-        "last_login": datetime.utcnow(),
+        "last_login": datetime.timestamp(datetime.utcnow()),
         "total_win": 0,
         "friends": []
     }
@@ -64,6 +66,8 @@ async def create_login_session(token, email, user_id):
         "user_email": email,
         "user_id": user_id
     })
+    await db.users.update_one({"_id": ObjectId(user_id)},
+                              {'$set': {"last_login": datetime.timestamp(datetime.utcnow())}})
     if result.acknowledged:
         return result
     else:
@@ -105,8 +109,10 @@ async def delete_room(room_id):
     else:
         raise DbError('Couldnt Delete Room.')
 
-async def delete_player(room_id,user_id):
-    result = await db.rooms.update_one({"_id":ObjectId(room_id)},{'$pull':{}})
+
+async def delete_player(room_id, user_id):
+    result = await db.rooms.update_one({"_id": ObjectId(room_id)}, {'$pull': {}})
+
 
 async def find_room(id, project=None):
     result = await db.rooms.find_one({"_id": ObjectId(id)}, project)
@@ -119,8 +125,9 @@ async def find_room(id, project=None):
 async def get_rooms_info():
     cursor = db.rooms.find({}, {'status.password': 0})
     result = await cursor.to_list(length=50)
+    parsed_result = objectid_to_str(result)
     if len(result) != 0:
-        return result
+        return parsed_result
     else:
         raise DbError('There is no room.')
 
@@ -158,7 +165,8 @@ async def join_user_to_room(user_id, room_id, room_info=None):
 
 
 async def leave_user_from_room(user_id, room_id):
-    room_info = await db.rooms.find_one({'_id': ObjectId(room_id),"users": {"$elemMatch": {"_id": ObjectId(user_id)}}}, {'admin': 1, 'users': 1})
+    room_info = await db.rooms.find_one({'_id': ObjectId(room_id), "users": {"$elemMatch": {"_id": ObjectId(user_id)}}},
+                                        {'admin': 1, 'users': 1})
     if room_info is None:
         raise DbError('You are not in a room.')
     if len(room_info['users']) == 1:
@@ -174,18 +182,22 @@ async def leave_user_from_room(user_id, room_id):
     else:
         raise DbError('Couldnt leave room.')
 
+
 async def get_user_profile(user_id):
-    result = await db.users.find_one({'_id': ObjectId(user_id)}, {'password': 0})
+    result = await db.users.find_one({'_id': ObjectId(user_id)}, {'password': 0, 'friends.messages': 0})
+    parsed_result = objectid_to_str(result)
     if result is not None:
-        return result
+        return parsed_result
     else:
         raise DbError('User profile Counldt find.')
 
 
 async def add_friend(user_id, friend_id, avatar):
+    friend = await db.users.find_one({"_id": ObjectId(friend_id)}, {"username": 1})
     data = {
         '_id': ObjectId(friend_id),
         'avatar': avatar,
+        'username': friend['username'],
         'last_opened': datetime.timestamp(datetime.utcnow()),
         'messages': []
     }
@@ -207,9 +219,9 @@ async def delete_friend(user_id, friend_id):
 async def send_message(user_id, friend_id, message):
     request = [
         UpdateOne({'_id': ObjectId(user_id), "friends": {"$elemMatch": {"_id": ObjectId(friend_id)}}},
-        {"$push": {"friends.$.messages": message}}),
+                  {"$push": {"friends.$.messages": dict(message, isFromMe=True)}}),
         UpdateOne({'_id': ObjectId(friend_id), "friends": {"$elemMatch": {"_id": ObjectId(user_id)}}},
-                  {"$push": {"friends.$.messages": message}})
+                  {"$push": {"friends.$.messages": dict(message, isFromMe=False)}})
     ]
     result = await db.users.bulk_write(request)
     if result.modified_count == 2:
@@ -219,11 +231,11 @@ async def send_message(user_id, friend_id, message):
 
 
 async def get_messages(user_id, friend_id):
-    cursor = await db.users.aggregate(
+    cursor = db.users.aggregate(
         [
             {
                 '$match': {
-                    '_id': ObjectId('user_id')
+                    '_id': ObjectId(user_id)
                 }
             },
             {
@@ -243,7 +255,7 @@ async def get_messages(user_id, friend_id):
 
                                     }
                                 }
-                            }, 10
+                            }, -10
                         ]
                     }
                 }
@@ -260,32 +272,65 @@ async def get_messages(user_id, friend_id):
         {'_id': ObjectId(user_id), "friends": {"$elemMatch": {"_id": ObjectId(friend_id)}}},
         {'$set': {'friends.$.last_opened': datetime.timestamp(datetime.utcnow())}}
     )
-    if len(result) != 0 and result_2.modified_count == 1:
-        return result
+    if len(result) != 0:
+        return objectid_to_str(result)
     else:
         raise DbError('Couldnt read messages')
 
-async def is_admin(user_id,room_id):
-    result = await db.rooms.find_one({"_id":ObjectId(room_id)},{'admin':1})
+
+async def is_admin(user_id, room_id):
+    result = await db.rooms.find_one({"_id": ObjectId(room_id)}, {'admin': 1})
     if str(result['admin']) == user_id:
         return True
     return False
 
-async def change_is_start(state,room_id):
-    result = await db.rooms.update_one({'_id':ObjectId(room_id)},{'$set':{"status.is_start":state}})
+
+async def change_is_start(state, room_id):
+    result = await db.rooms.update_one({'_id': ObjectId(room_id)}, {'$set': {"status.is_start": state}})
     if result.modified_count == 1:
         return result
     else:
         raise DbError('Could Change is_start status.')
 
+
 async def increase_win(winner):
-    request = [UpdateOne({'_id':ObjectId(player['user_id'])},{'$inc':{'total_win':1}}) for player in winner]
+    request = [UpdateOne({'_id': ObjectId(player['user_id'])}, {'$inc': {'total_win': 1}}) for player in winner]
     if len(request) != 0:
         await db.users.bulk_write(request)
 
-async def complete_login(data,email):
-    result = await db.users.update_one({'email':email},data)
+
+async def complete_login(data, email):
+    aditional_info = {
+        "last_login": datetime.utcnow(),
+        "total_win": 0,
+        "email": email,
+        "friends": []
+    }
+
+    data.update(aditional_info)
+    result = await db.users.replace_one({'email': email}, data)
+
     if result.modified_count == 1:
         return True
     else:
         DbError('Couldn Complete Login')
+
+
+async def update_round(round, room_id):
+    result = await db.rooms.update_one({"_id": ObjectId(room_id)}, {'$set': {'status.current_round': int(round)}})
+    if result.modified_count == 1:
+        return True
+    else:
+        DbError('Couldnt Update current_round')
+
+
+async def update_last_opened(user_id, friend_id):
+    timestamp = datetime.timestamp(datetime.utcnow())
+    result = await db.users.update_one(
+        {'_id': ObjectId(user_id), "friends": {"$elemMatch": {"_id": ObjectId(friend_id)}}},
+        {'$set': {'friends.$.last_opened': timestamp}}
+    )
+    if result.modified_count == 1:
+        return timestamp
+    else:
+        DbError('Couldn Update last_opened')
