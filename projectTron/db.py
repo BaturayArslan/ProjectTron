@@ -87,7 +87,7 @@ async def logout_user(token):
 
 
 async def find_refresh_token(token):
-    result = await db.sessions.find_one({'user_email': token['sub'], 'jti': token['jti']}, {"_id": 1})
+    result = await db.sessions.find_one({'user_email': token['identity'], 'jti': token['jti']}, {"_id": 1})
     if result is not None:
         return True
     else:
@@ -245,6 +245,7 @@ async def get_messages(user_id, friend_id):
                 '$project': {
                     'friends._id': 1,
                     'friends.avatar': 1,
+					'friends.last_opened':1,
                     'friends.messages': {
                         '$slice': [
                             {

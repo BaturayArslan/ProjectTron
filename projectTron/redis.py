@@ -12,7 +12,6 @@ async def get_redis():
     if ("redis_rooms_pubsub" or "redis_connection") not in g:
         connection = current_app.redis_connection_pool
         pubsub: aioredis.client.PubSub = connection.pubsub()
-        await pubsub.subscribe('rooms_info_feed')
         g.redis_rooms_pubsub = pubsub
         g.redis_connection = connection
     return g.redis_rooms_pubsub, g.redis_connection
@@ -28,6 +27,7 @@ class Broker:
     async def listen(self):
         try:
             pubsub = g.redis_rooms_pubsub
+            await pubsub.subscribe('rooms_info_feed')
             while True:
                 async with async_timeout.timeout(10):
                     raw_message = await pubsub.get_message(ignore_subscribe_messages=True)
@@ -45,7 +45,7 @@ class Broker:
         except Exception as e:
             #Rerun if any error occurs.
             current_app.add_background_task(self.listen)
-            print('Something went wrong on broker.listen')
+            print('Something went wrong on broker.listen',str(e))
 
 
     async def publish(self, message):

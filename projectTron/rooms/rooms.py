@@ -1,5 +1,5 @@
 from quart import Blueprint, request, jsonify,g,current_app
-from flask_jwt_extended import jwt_required, get_jwt
+from quart_jwt_extended import jwt_required, get_raw_jwt,get_jwt_claims
 from .room_forms import CreateRoomForm
 from bson import ObjectId
 import aioredis
@@ -19,10 +19,10 @@ rooms_bp = Blueprint("room", __name__, url_prefix="/room")
 
 
 @rooms_bp.route("/createRoom", methods=['POST'])
-@jwt_required()
+@jwt_required
 async def create_room():
     try:
-        user = get_jwt()
+        user = get_jwt_claims()
         form_data = await request.form
         data = string_to_int(form_data.to_dict())
         form = CreateRoomForm(form_data)
@@ -73,10 +73,10 @@ async def create_room():
         raise e
 
 @rooms_bp.route("/<string:room_id>", methods=['POST'])
-@jwt_required()
+@jwt_required
 async def join_room(room_id):
     try:
-        user = get_jwt()
+        user = get_jwt_claims()
         # Check if user already in a room.Validate user have a right to create room.
         await db.check_user(user['user_id'])
         room_info = await db.find_room(room_id,{'status':1,'admin':1})
@@ -104,11 +104,11 @@ async def join_room(room_id):
 
 
 @rooms_bp.route('/leaveRoom/<string:room_id>',methods=['GET'])
-@jwt_required()
+@jwt_required
 async def leave_room(room_id):
     try:
         #TODO :: Save user stats  to database before leave
-        user = get_jwt()
+        user = get_jwt_claims()
         pubsub,redis_connection = await redis.get_redis()
         result = await db.leave_user_from_room(user['user_id'],room_id)
 
@@ -127,10 +127,10 @@ async def leave_room(room_id):
         raise e
 
 @rooms_bp.route('/Rooms',methods=['GET'])
-@jwt_required()
+@jwt_required
 async def get_rooms_info():
     try:
-        user = get_jwt()
+        user = get_jwt_claims()
         rooms_info = await db.get_rooms_info()
         return jsonify({
             "status": 'success',
@@ -142,7 +142,7 @@ async def get_rooms_info():
         raise e
 
 @rooms_bp.route("/update",methods=['GET'])
-@jwt_required()
+@jwt_required
 async def refresh_rooms_info():
     try:
         client_time_stamp = float(request.args.get('timestamp')) if request.args.get('timestamp',None) else None

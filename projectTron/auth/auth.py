@@ -8,13 +8,15 @@ from quart import (
     make_response,
     current_app,
 )
-from flask_jwt_extended import (
+from quart_jwt_extended import (
     create_access_token,
     create_refresh_token,
     JWTManager,
     jwt_required,
-    get_jwt,
+    get_jwt_claims,
+    get_raw_jwt,
     get_jwt_identity,
+    jwt_refresh_token_required,
     set_access_cookies,
     unset_jwt_cookies,
     decode_token,
@@ -91,11 +93,11 @@ async def login():
             }), 202
         access_token = create_access_token(
             identity=user['email'],
-            additional_claims= {'user_id':str(user['_id']),'user_name':user['username']}
+            user_claims = {'user_id':str(user['_id']),'user_name':user['username']}
         )
         refresh_token = create_refresh_token(
             identity=user['email'],
-            additional_claims={'user_id':str(user['_id']),'user_name':user['username']}
+            user_claims ={'user_id':str(user['_id']),'user_name':user['username']}
         )
         insert_result = await db.create_login_session(refresh_token, user['email'], user['_id'])
 
@@ -111,9 +113,9 @@ async def login():
 
 
 @auth_bp.route("/logout", methods=["POST"])
-@jwt_required()
+@jwt_required
 async def logout():
-    acces_token = get_jwt()
+    acces_token = get_raw_jwt()
     form = await request.form
     refresh_token = form.get('refresh_token', None)
     if await db.logout_user(refresh_token):
@@ -123,18 +125,18 @@ async def logout():
 
 
 @auth_bp.route("/refresh", methods=['POST'])
-@jwt_required(refresh=True)
+@jwt_refresh_token_required
 async def refresh():
-    refresh_token = get_jwt()
+    refresh_token = get_raw_jwt()
     try:
         await db.find_refresh_token(refresh_token)
     except DbError as e:
         return jsonify({"message": 'Please login again.'}), 202
 
-    identity = refresh_token['sub']
+    identity = refresh_token['identity']
     access_token = create_access_token(
             identity=identity,
-            additional_claims= {'user_id':refresh_token['user_id'],'user_name':refresh_token['user_name']}
+            user_claims = {'user_id':refresh_token["user_claims"]['user_id'],'user_name':refresh_token["user_claims"]['user_name']}
         )
     return jsonify({'auth_token': access_token}), 200
 
@@ -175,11 +177,11 @@ async def authorize():
         # User already registered so just login user
         access_token = create_access_token(
             identity=user['email'],
-            additional_claims= {'user_id':str(user['_id']),'user_name':user['username']}
+            user_claims = {'user_id':str(user['_id']),'user_name':user['username']}
         )
         refresh_token = create_refresh_token(
             identity=user['email'],
-            additional_claims={'user_id':str(user['_id']),'user_name':user['username']}
+            user_claims ={'user_id':str(user['_id']),'user_name':user['username']}
         )
         result = await db.create_login_session(refresh_token, user['email'], user['_id'])
         return redirect("https://" + current_app.config['SERVER_NAME'] + f"/static/token.html?auth_token={access_token}&refresh_token={refresh_token}")
@@ -193,14 +195,14 @@ async def authorize():
 
 
 @oauth_bp.route('/complete',methods=['POST'])
-@jwt_required()
+@jwt_required
 async def complete():
     #data = {
     #    'avatar':int,
     #    'username':str,
     #    'country':None
     #}
-    token = get_jwt()
+    token = get_raw_jwt()
     form_data = await request.form
     data = form_data.to_dict()
     form = CompleteLoginForm(form_data)
@@ -213,16 +215,16 @@ async def complete():
         except Exception as e:
             data['country'] = ''
 
-        await db.complete_login(data,token['sub'])
-        user = await db.db.users.find_one({'email':token['sub']})
+        await db.complete_login(data,token['identity'])
+        user = await db.db.users.find_one({'email':token['identity']})
 
         access_token = create_access_token(
             identity=user['email'],
-            additional_claims={'user_id': str(user['_id']), 'user_name': data['username']}
+            user_claims ={'user_id': str(user['_id']), 'user_name': data['username']}
         )
         refresh_token = create_refresh_token(
             identity=user['email'],
-            additional_claims={'user_id': str(user['_id']), 'user_name': data['username']}
+            user_claims ={'user_id': str(user['_id']), 'user_name': data['username']}
         )
 
         result = await db.create_login_session(refresh_token, user['email'], user['_id'])
