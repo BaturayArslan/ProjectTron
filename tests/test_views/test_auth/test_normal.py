@@ -172,7 +172,7 @@ class TestLogin:
         assert response.status_code == 200
         access_header, access_claims, access_sign = response_json['auth_token'].split(".")
         decoded_access_claims = json.loads(base64.b64decode(access_claims + "=="))
-        assert decoded_access_claims['sub'] == "test@test.com"
+        assert decoded_access_claims['identity'] == "test@test.com"
         assert decoded_access_claims['type'] == "access"
         exp_date = datetime.fromtimestamp(decoded_access_claims['exp'])
         issued_date = datetime.fromtimestamp(decoded_access_claims['iat'])
@@ -180,7 +180,7 @@ class TestLogin:
 
         refresh_header, refresh_claims, refresh_sign = response_json['refresh_token'].split(".")
         decoded_refresh_claims = json.loads(base64.b64decode(refresh_claims + "=="))
-        assert decoded_refresh_claims['sub'] == "test@test.com"
+        assert decoded_refresh_claims['identity'] == "test@test.com"
         assert decoded_refresh_claims['type'] == "refresh"
         exp_date = datetime.fromtimestamp(decoded_refresh_claims['exp'])
         issued_date = datetime.fromtimestamp(decoded_refresh_claims['iat'])
@@ -271,8 +271,8 @@ class TestRefreshToken:
         response_json = await response.get_json()
         assert response.status_code == 200
         access_header, access_claims, access_sign = response_json['auth_token'].split(".")
-        decoded_access_claims = json.loads(base64.b64decode(access_claims + "="))
-        assert decoded_access_claims['sub'] == "test@test.com"
+        decoded_access_claims = json.loads(base64.b64decode(access_claims + "=="))
+        assert decoded_access_claims['identity'] == "test@test.com"
         assert decoded_access_claims['type'] == "access"
         exp_date = datetime.fromtimestamp(decoded_access_claims['exp'])
         issued_date = datetime.fromtimestamp(decoded_access_claims['iat'])
@@ -286,12 +286,13 @@ class TestRefreshToken:
             "sub": "test@test.com",
 
         }
-        fake_token = jwt.decode(payload, "fake token")
+        fake_token = jwt.encode(payload, "fake token")
         headers = {
             "Authorization": f"Bearer {fake_token}"
         }
-        response = client.post("/auth/refresh", headers=headers)
-        response_json = response.get_json()
+        response = await client.post("/auth/refresh", headers=headers)
+        response_json = await response.get_json()
+        assert response.status_code == 402
         # Invalid signature
 
         # expired token

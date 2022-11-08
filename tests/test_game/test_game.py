@@ -3,7 +3,7 @@ import json
 import pytest
 import pytest_asyncio
 from quart import current_app
-from flask_jwt_extended import decode_token
+from quart_jwt_extended import decode_token
 from bson import ObjectId
 
 from projectTron import redis,db

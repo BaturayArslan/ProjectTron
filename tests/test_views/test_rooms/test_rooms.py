@@ -3,7 +3,7 @@ import asyncio
 import pytest
 import pytest_asyncio
 from bson import ObjectId
-from flask_jwt_extended import decode_token
+from quart_jwt_extended import decode_token
 from werkzeug.local import LocalProxy
 import json
 import base64
@@ -21,6 +21,7 @@ async def register_users(class_client, class_app):
     """
         This fixture drop existing users collection and recreate that collection and register two user 'user1' and 'user2'
     """
+    await class_client.get('/')
     async with class_app.app_context():
         db_instance = db.db
         await db_instance.drop_collection('users')
@@ -103,8 +104,9 @@ async def get_room_info_fixture(class_client, class_app, get_login_info_fixture)
         await db_instance.create_collection('rooms')
         user1, user2 = get_login_info_fixture
         data = {
+            "name":"test_room",
             "max_user": 4,
-            "max_point": 100,
+            "max_point": 15,
             'password': ''
         }
         headers = {
@@ -115,7 +117,6 @@ async def get_room_info_fixture(class_client, class_app, get_login_info_fixture)
         result = await task
         result_json = await result.get_json()
         assert result.status_code == 201
-        assert result_json['status'] == "success"
         return result_json['message']['room_id']
 
 
@@ -123,20 +124,21 @@ async def get_room_info_fixture(class_client, class_app, get_login_info_fixture)
 @pytest.mark.usefixtures("login_user_fixture")
 class TestCreateRoom:
 
-    async def test_create_room(self, client, app, get_login_info_fixture):
-        # app = factory.create_app(test=True)
-        # client = app.test_client()
+    async def test_create_room(self, class_client, class_app, get_login_info_fixture):
+        client = class_client
+        app = class_app
         async with app.app_context():
             # Get reddis connections for test events
             pubsub, redis_connection = await redis.get_redis()
             user1, user2 = get_login_info_fixture
             # Decode auth_token
             acces_token_header, acces_token_paylaod, acces_token_signature = user1['auth_token'].split('.')
-            user1_token = json.loads(base64.b64decode(acces_token_paylaod + "="))
+            user1_token = json.loads(base64.b64decode(acces_token_paylaod + "=="))
             db_instance = db.db
             data = {
+                "name": "test_room",
                 "max_user": 4,
-                "max_point": 100,
+                "max_point": 15,
                 'password': ''
             }
             headers = {
@@ -147,45 +149,49 @@ class TestCreateRoom:
             result = await task
             result_json = await result.get_json()
             assert result.status_code == 201
-            assert result_json['status'] == 'success'
             message = result_json['message']
             room = await db_instance.rooms.find_one({'_id': ObjectId(message['room_id'])})
             assert room != None
             assert room['max_user'] == data['max_user']
-            assert room['status'] == {'public': True, 'password': ''}
-            assert room['admin'] == ObjectId(user1_token['user_id'])
-            assert {'_id': ObjectId(ObjectId(user1_token['user_id'])), 'point': 0, "color": 0, 'win_count': 0,
-                    'kick_vote': 0, } in room['users']
+            assert room['status'] == {'public': True, 'password': '',"current_round":0,"is_start":False}
+            assert room['admin'] == ObjectId(user1_token["user_claims"]['user_id'])
+
             # Check if correct event published or not.
             room['status'].pop('password')
             assert event['data'] == objectid_to_str(room)
 
-    async def test_user_already_in_room(self, client, app, get_login_info_fixture, get_room_info_fixture):
+    async def test_user_already_in_room(self, class_client, class_app, get_login_info_fixture, get_room_info_fixture):
+        client = class_client
+        app = class_app
         async with app.app_context():
             db_instance = db.db
             user1, user2 = get_login_info_fixture
             room_id = get_room_info_fixture
             user2_token = decode_token(user2['auth_token'])
             data = {
+                "name": "test_room",
                 "max_user": 4,
-                "max_point": 100,
+                "max_point": 15,
                 'password': ''
             }
             headers = {
                 'Authorization': f'Bearer {user2["auth_token"]}'
             }
+            join_data = {
+                'password': ''
+            }
+            await client.post(f'/room/{room_id}', form=join_data, headers=headers)
             result = await client.post('/room/createRoom', form=data, headers=headers)
             result_json = await result.get_json()
-            assert result.status_code == 500
-            assert result_json['status'] == 'error'
-            assert result_json['message'] == 'You Already in a room.'
+            assert result.status_code == 200
+            assert result_json['message'] == 'You Already in a another room.'
 
     # Todo test a data erro occur when user try to join new created room
-    async def test_UserJoinRoomFailed_error(self, client, app, get_login_info_fixture, get_room_info_fixture):
-        async with app.app_context():
-            user1, user2 = get_login_info_fixture
-            room_id = get_room_info_fixture
-            user1_token = decode_token(user1['auth_token'])
+    # async def test_UserJoinRoomFailed_error(self, class_client, class_app, get_login_info_fixture, get_room_info_fixture):
+    #     async with app.app_context():
+    #         user1, user2 = get_login_info_fixture
+    #         room_id = get_room_info_fixture
+    #         user1_token = decode_token(user1['auth_token'])
 
 
 @pytest.mark.asyncio
@@ -215,7 +221,6 @@ class TestJoinRoom:
             result = await task
             result_json = await result.get_json()
             assert result.status_code == 200
-            assert result_json['status'] == 'success'
             assert result_json['message'] == 'OK'
             assert event['name'] == 'user join'
             assert event['room_id'] == room_id
@@ -234,13 +239,20 @@ class TestLeaveRoom:
             headers = {
                 'Authorization': f'Bearer {user2["auth_token"]}'
             }
-
+            join_data = {
+                'password': ''
+            }
+            # request for join room.
+            await client.post(f'/room/{room_id}', form=join_data, headers=headers)
+            # request for leave room.
             task = asyncio.create_task(client.get(f'/room/leaveRoom/{room_id}', headers=headers))
+            # one for user join event
+            event = await redis.broker.subscribe()
+            #one for user leave event
             event = await redis.broker.subscribe()
             result = await task
             result_json = await result.get_json()
             assert result.status_code == 200
-            assert result_json['status'] == 'success'
             assert result_json['message'] == 'OK'
             assert event['name'] == 'user leaves'
             assert event['room_id'] == room_id

@@ -25,6 +25,7 @@ def class_app():
 def class_client(class_app):
     return class_app.test_client()
 
+
 @pytest_asyncio.fixture(scope="class")
 def event_loop():
     loop = asyncio.get_event_loop_policy().get_event_loop()
