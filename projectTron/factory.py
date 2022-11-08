@@ -34,8 +34,8 @@ def create_app(test=False):
     jwt = JWTManager(app)
 
     @jwt.expired_token_loader
-    def my_expired_token_callback(jwt_header, jwt_payload):
-        return jsonify({"status": "error", "message": "Expired Token.","type":jwt_payload['type']}), 402
+    def my_expired_token_callback(jwt_token):
+        return jsonify({"status": "error", "message": "Expired Token.","type":jwt_token['type']}), 402
 
     @jwt.invalid_token_loader
     def my_invalid_token_callback(message):
@@ -77,14 +77,12 @@ def create_app(test=False):
     @jwt_required
     async def require_complete_login():
         """If user login with oauth provider some information about player not complete.This middleware enforce complete login."""
+        if(request.method == 'OPTIONS'):
+            return
         token = get_jwt_claims()
         if not token.get('user_name',None):
             return redirect(url_for('complete_login.complete'))
     
-    @app.before_request
-    async def respond_to_options():
-        if(request.method == 'OPTIONS'):
-            return
 
     app.before_request_funcs = defaultdict(list)
     app.before_request_funcs.update({
@@ -92,7 +90,6 @@ def create_app(test=False):
         'user':[require_complete_login],
         'websocket': [require_complete_login],
     })
-
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(oauth_bp)

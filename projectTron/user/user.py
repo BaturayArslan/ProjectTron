@@ -105,17 +105,17 @@ async def get_messages():
 @jwt_required
 async def update_messages():
     user = get_jwt_claims()
-    redis_connection = g.redis_connection
+    _,redis_connection = await redis.get_redis()
     arguments = request.args
     timestamp = float(arguments.get('timestamp')) if arguments.get('timestamp') else None
     if not timestamp:
         return jsonify({'message': 'friend_id parameter missing.'}), 400
     if(arguments.get("isBlock",True)):
         print("started : ",user['user_name'])
-        new_message = await redis_connection.xreadgroup(user['user_id'],user['user_id'],{user['user_id']: ">"},block=120000000,noack=True)
+        new_message = await redis_connection.xread({user['user_id']: normal_to_redis_timestamp(timestamp)},block=120000)
         print("leaved: " ,user['user_name'])
     else:
-        new_message = await redis_connection.xreadgroup(user['user_id'],user['user_id'],{user['user_id']: normal_to_redis_timestamp(timestamp)},noack=True)
+        new_message = await redis_connection.xread({user['user_id']: normal_to_redis_timestamp(timestamp)})
     if new_message:
         return jsonify({'message': parse_redis_stream_event(new_message)}), 200
     else:
