@@ -42,9 +42,11 @@ class Broker:
         except asyncio.CancelledError as e:
             print('Listen task cancelled.')
             await current_app.publish_task
+            await pubsub.unsubscribe("rooms_info_feed")
         except Exception as e:
             #Rerun if any error occurs.
             current_app.add_background_task(self.listen)
+            await pubsub.unsubscribe("rooms_info_feed")
             print('Something went wrong on broker.listen',str(e))
 
 
@@ -96,26 +98,16 @@ class Events():
     MESSAGE_SENDS = None
     @staticmethod
     def set_room_creation(room_id, data, user_id):
+        data['status'].pop("password")
         Events.ROOM_CREATION = {
             'name': 'room creation',
             'data': {
                 '_id': str(room_id),
+                'name':data['name'],
                 'max_user': data['max_user'],
                 'max_point': data['max_point'],
-                "status": {
-                    "public": data['status']['public']
-                },
+                "status": data['status'],
                 'admin': str(data['admin']),
-                'users': [
-                    {
-                        '_id': str(user_id),
-                        'point': 0,
-                        "color": 0,
-                        'win_count': 0,
-                        'kick_vote': 0,
-
-                    }
-                ]
             },
             'timestamp': datetime.timestamp(datetime.utcnow())
         }

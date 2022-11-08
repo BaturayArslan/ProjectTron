@@ -1,7 +1,9 @@
+import asyncio
+
 import quart.flask_patch
 from pathlib import Path
 from quart import Quart, jsonify,g,current_app,url_for,redirect,request
-from quart_jwt_extended import JWTManager,get_raw_jwt,jwt_required,verify_jwt_in_request
+from quart_jwt_extended import JWTManager,get_raw_jwt,jwt_required,verify_jwt_in_request,get_jwt_claims
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError
 from collections import defaultdict
@@ -14,8 +16,8 @@ from .rooms.rooms import rooms_bp
 from .user.user import user_bp
 from .game.websocket import websocket_bp
 from .redis import broker,get_redis
-from .error_handlers import dberror_handler,duplicate_key_handler,bad_request_handler
-from .exceptions import DbError,BadRequest
+from .error_handlers import dberror_handler,duplicate_key_handler,bad_request_handler,exception_handler,asyncio_timeout_handler,checkfailed_handler
+from .exceptions import DbError,BadRequest,CheckFailed
 
 def create_app(test=False):
     APP_DIR = Path(__file__).parent
@@ -31,21 +33,24 @@ def create_app(test=False):
 
     jwt = JWTManager(app)
 
-    # @jwt.expired_token_loader
-    # def my_expired_token_callback(jwt_header, jwt_payload):
-    #     return jsonify({"status": "error", "message": "Expired Token.","type":jwt_payload['type']}), 402
-    #
-    # @jwt.invalid_token_loader
-    # def my_invalid_token_callback(message):
-    #     return jsonify({"status": "error", "message": "Invalid Token."}), 402
-    #
-    # @jwt.unauthorized_loader
-    # def my_missing_token_callback(messge):
-    #     return jsonify({"status": "error", "message": "Missing Token."}), 402
+    @jwt.expired_token_loader
+    def my_expired_token_callback(jwt_header, jwt_payload):
+        return jsonify({"status": "error", "message": "Expired Token.","type":jwt_payload['type']}), 402
+
+    @jwt.invalid_token_loader
+    def my_invalid_token_callback(message):
+        return jsonify({"status": "error", "message": "Invalid Token."}), 402
+
+    @jwt.unauthorized_loader
+    def my_missing_token_callback(messge):
+        return jsonify({"status": "error", "message": "Missing Token."}), 402
 
     app.register_error_handler(DbError,dberror_handler)
     app.register_error_handler(DuplicateKeyError,duplicate_key_handler)
     app.register_error_handler(BadRequest, bad_request_handler)
+    app.register_error_handler(Exception, exception_handler)
+    app.register_error_handler(asyncio.TimeoutError,asyncio_timeout_handler)
+    app.register_error_handler(CheckFailed,checkfailed_handler)
 
 
     @app.before_first_request
@@ -61,10 +66,10 @@ def create_app(test=False):
         )[current_app.config['DATABASE_NAME']]
 
         _,conncetion = await get_redis()
-        # app.add_background_task(broker.listen)
-        # task = list(app.background_tasks.data)[0]()
-        # task.set_name('background_task')
-        #app.my_background_task = task
+        app.add_background_task(broker.listen)
+        task = list(app.background_tasks.data)[0]()
+        task.set_name('background_task')
+        app.my_background_task = task
         app.publish_task = None
         app.games={}
         app.game_tasks={}
@@ -72,9 +77,7 @@ def create_app(test=False):
     @jwt_required
     async def require_complete_login():
         """If user login with oauth provider some information about player not complete.This middleware enforce complete login."""
-        if(request.method == 'OPTIONS'):
-            return
-        token = get_raw_jwt()
+        token = get_jwt_claims()
         if not token.get('user_name',None):
             return redirect(url_for('complete_login.complete'))
     
@@ -83,12 +86,12 @@ def create_app(test=False):
         if(request.method == 'OPTIONS'):
             return
 
-    # app.before_request_funcs = defaultdict(list)
-    # app.before_request_funcs.update({
-    #     'room':[require_complete_login],
-    #     'user':[require_complete_login],
-    #     'websocket': [require_complete_login],
-    # })
+    app.before_request_funcs = defaultdict(list)
+    app.before_request_funcs.update({
+        'room':[require_complete_login],
+        'user':[require_complete_login],
+        'websocket': [require_complete_login],
+    })
 
 
     app.register_blueprint(auth_bp)

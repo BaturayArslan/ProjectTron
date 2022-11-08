@@ -54,7 +54,7 @@ class Game:
                 continue
             except Exception as e:
                 # TODO change this later.
-                raise
+                continue
 
     def _create_send_task(self, player, player_id):
         async def task_fnc(*args, **kwargs):

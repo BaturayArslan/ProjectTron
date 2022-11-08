@@ -8,8 +8,8 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import UpdateOne
 from bson import ObjectId
 from datetime import datetime
-from flask_jwt_extended.exceptions import NoAuthorizationError
-from flask_jwt_extended import decode_token
+from quart_jwt_extended.exceptions import NoAuthorizationError
+from quart_jwt_extended import decode_token
 from datetime import datetime
 from projectTron.utils.utils import objectid_to_str
 
@@ -77,7 +77,7 @@ async def create_login_session(token, email, user_id):
 async def logout_user(token):
     if token:
         decoded_token = decode_token(token)
-        result = await db.sessions.delete_one({'user_email': decoded_token['sub'], 'jti': decoded_token['jti']})
+        result = await db.sessions.delete_one({'user_email': decoded_token['identity'], 'jti': decoded_token['jti']})
         if result.deleted_count == 1:
             return True
         else:
@@ -135,7 +135,7 @@ async def get_rooms_info():
 async def check_user(id):
     cursor = db.rooms.find({"users._id": ObjectId(id)}, {'_id': 1})
     result = await cursor.to_list(length=100)
-    if len(result) <= 1:
+    if len(result) == 0:
         return True
     else:
         raise CheckFailed('You Already in a another room.')
