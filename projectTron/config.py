@@ -14,7 +14,7 @@ class BaseConfig:
     SECRET_KEY = os.getenv('SECRET_KEY')
     MONGO_URI = os.getenv('MONGO_URI')
     DEBUG = False
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=5)
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=120)
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=1)
     JWT_TOKEN_LOCATION = ['headers']
 

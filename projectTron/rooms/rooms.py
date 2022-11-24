@@ -2,6 +2,7 @@ from quart import Blueprint, request, jsonify,g,current_app
 from quart_jwt_extended import jwt_required, get_raw_jwt,get_jwt_claims
 from .room_forms import CreateRoomForm
 from bson import ObjectId
+from werkzeug.datastructures import MultiDict
 import aioredis
 import async_timeout
 import asyncio
@@ -24,18 +25,18 @@ async def create_room():
     try:
         user = get_jwt_claims()
         await redis.get_redis()
-        form_data = await request.form
-        data = string_to_int(form_data.to_dict())
-        form = CreateRoomForm(form_data)
+        form_data = await request.json
+        data = string_to_int(form_data)
+        form = CreateRoomForm(MultiDict(form_data))
         #Check if user already in a room.Validate user have a right to create room.
         await db.check_user(user['user_id'])
         if form.validate():
 
             if data['password'] == "":
                 data.pop('password')
-                data.update({'status': {'public': True, 'password': '','is_start':False,'current_round':0}})
+                data.update({'status': {'public': True, 'password': '','is_start':False,'current_round':0},"users":[]})
             else:
-                data.update({'status': {'public': False, 'password': data['password']},'is_start':False,'current_round':0})
+                data.update({'status': {'public': False, 'password': data['password'],'is_start':False,'current_round':0},"users":[]})
                 data.pop('password')
             data.update({
                 'admin':ObjectId(user['user_id'])
@@ -133,16 +134,16 @@ async def refresh_rooms_info():
         if client_time_stamp is None or client_time_stamp == broker.events[-1]['timestamp']:
             async with async_timeout.timeout(120.0):
                 event = await broker.subscribe()
-                return jsonify({'status':'success','message':event})
+                return jsonify({'events':[event]}),200
         else:
             await asyncio.sleep(0.5)
             events = broker.syncronize(client_time_stamp)
             if events:
-                return jsonify({'status':'success','events':events}),200
-            return jsonify({'status':'error','message':'Your are too slow.'}),302
+                return jsonify({'events':events}),200
+            return jsonify({'status':'error','message':'Your are too slow.'}),400
 
     except ValueError as e :
         return jsonify({'status':'error','message':'Invalid timestamp'}),400
     except asyncio.TimeoutError as e:
-        return jsonify({'status':'error','messsage': 'timeout.'}), 408
+        return jsonify({'events':[]}),200
 

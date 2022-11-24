@@ -40,7 +40,7 @@ class Game:
 
         await self.set_pubsub()
         # Inform other server that new user joined a room
-        player_join_event = Events.set_player_join(player_id, user_name)
+        player_join_event = await Events.set_player_join(player_id, user_name)
         await self.broker.push_event(player_join_event)
 
         return self.connections[player_id]['send_task'], self.connections[player_id]['receive_task']
@@ -162,7 +162,8 @@ class Events():
         (13, "end_round"),
         (14, "end_game"),
         (15,"move"),
-        (16,"echo")
+        (16,"echo"),
+        (17,"get_room_info")
     ]
 
     def __init__(self, game):
@@ -184,7 +185,8 @@ class Events():
             'color': event['info']['color'],
             'win_round': event['info']['win_round'],
             'is_ready': event['info']['is_ready'],
-            'join_time': event['timestamp']
+            'join_time': event['timestamp'],
+            'avatar':event['info']['avatar']
         }
         result = [
             {
@@ -194,12 +196,14 @@ class Events():
             {
                 'event_number': 3,
                 'message': f'User {event["info"]["user_name"]} has joined room.'
-            }
+            },
+            await Events.set_get_room_info(self.game._room_id)
         ]
         await self.game.broker.publish(result, ('broadcast', None))
 
     @staticmethod
-    def set_player_join(user_id, user_name):
+    async def set_player_join(user_id, user_name):
+        player_info = await db.get_user_profile(user_id)
         event = {
             'event_number': 1,
             'info': {
@@ -207,7 +211,8 @@ class Events():
                 'user_name': user_name,
                 'win_round': 0,
                 'color': 1,
-                'is_ready': False
+                'is_ready': False,
+                'avatar':player_info['avatar']
             },
             'timestamp': datetime.timestamp(datetime.utcnow())
         }
@@ -222,7 +227,8 @@ class Events():
             {
                 'event_number': 3,
                 'message': f'User {event["info"]["user_name"]} has leave room.'
-            }
+            },
+            await Events.set_get_room_info(self.game._room_id)
         ]
 
         await self.game.broker.publish(result, ('broadcast', None))
@@ -510,9 +516,23 @@ class Events():
                 'color':color
             }
         }
+        return event
 
     async def echo(self,event):
         await self.game.broker.publish(event,('broadcast',None))
+
+    async def get_room_info(self):
+        event = await Events.set_get_room_info(self.game._room_id)
+        await self.game.broker.publish(event,('broadcast',None))
+
+    @staticmethod
+    async def set_get_room_info(room_id):
+        room_info = await db.find_room(room_id)
+        event = {
+            'event_number':17,
+            'info':room_info
+        }
+        return event
 
 class Board:
     def __init__(self, game, rows, cols):

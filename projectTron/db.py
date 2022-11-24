@@ -117,7 +117,7 @@ async def delete_player(room_id, user_id):
 async def find_room(id, project=None):
     result = await db.rooms.find_one({"_id": ObjectId(id)}, project)
     if result is not None:
-        return result
+        return objectid_to_str(result)
     else:
         raise DbError('Couldnt Find Room.')
 
@@ -129,13 +129,13 @@ async def get_rooms_info():
     if len(result) != 0:
         return parsed_result
     else:
-        raise DbError('There is no room.')
+        return []
 
 
 async def check_user(id):
     cursor = db.rooms.find({"users._id": ObjectId(id)}, {'_id': 1})
     result = await cursor.to_list(length=100)
-    if len(result) == 0:
+    if len(result) <= 1:
         return True
     else:
         raise CheckFailed('You Already in a another room.')

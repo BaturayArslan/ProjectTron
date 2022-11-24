@@ -21,13 +21,14 @@ redis = LocalProxy(get_redis)
 
 
 class Broker:
-    subs = asyncio.Queue()
+    subs =""
     events = list()
 
     async def listen(self):
         try:
             pubsub = g.redis_rooms_pubsub
             await pubsub.subscribe('rooms_info_feed')
+            Broker.subs = asyncio.Queue()
             while True:
                 async with async_timeout.timeout(10):
                     raw_message = await pubsub.get_message(ignore_subscribe_messages=True)
@@ -36,7 +37,7 @@ class Broker:
                         self.events.append(message)
                         print(message)
                         self.check_events()
-                        current_app.publish_task = asyncio.create_task(self.publish(message))
+                        current_app.publish_task = asyncio.get_event_loop().create_task(self.publish(message))
                         await self.subs.join()
                 await asyncio.sleep(0.1)
         except asyncio.CancelledError as e:
@@ -45,8 +46,9 @@ class Broker:
             await pubsub.unsubscribe("rooms_info_feed")
         except Exception as e:
             #Rerun if any error occurs.
-            current_app.add_background_task(self.listen)
+            await self.publish({"name":"empty"})
             await pubsub.unsubscribe("rooms_info_feed")
+            current_app.add_background_task(self.listen)
             print('Something went wrong on broker.listen',str(e))
 
 
@@ -108,6 +110,7 @@ class Events():
                 'max_point': data['max_point'],
                 "status": data['status'],
                 'admin': str(data['admin']),
+				"users":[]
             },
             'timestamp': datetime.timestamp(datetime.utcnow())
         }

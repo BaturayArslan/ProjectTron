@@ -11,6 +11,7 @@ async def bad_request_handler(e):
     return jsonify({"message": f"{str(e)}"}), 400
 
 async def exception_handler(e):
+    print(e)
     return jsonify({"message":str(type(e)) + str(e)}),500
 
 async def asyncio_timeout_handler(e):
