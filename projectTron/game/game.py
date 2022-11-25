@@ -245,9 +245,10 @@ class Events():
             },
             'timestamp': datetime.timestamp(datetime.utcnow())
         }
+        return event
 
     async def user_message(self, event):
-        await self.game.broker.publish(event, ('broadcast', None))
+        await self.game.broker.publish([event], ('broadcast', None))
 
     @staticmethod
     def set_user_message(self, user_name, user_id, msg):
@@ -264,7 +265,7 @@ class Events():
 
     async def change_color(self, event):
         self.game.players[event['info']['user_id']].update({"color": event['info']['color']})
-        self.game.broker.publish(event, ('broadcast', None))
+        await self.game.broker.publish([event], ('broadcast', None))
 
     @staticmethod
     def set_change_color(user_id, color):
@@ -279,15 +280,16 @@ class Events():
         return event
 
     async def send_friend_request(self, event):
-        result = Events.set_has_friend_request(event['info']['to_user_id'], event['info']['user_id'])
+        result = Events.set_has_friend_request(event['info']['to_user_id'], event['info']['user_id'],event['info']['user_name'])
         await self.game.broker.push_event(result)
 
     @staticmethod
-    def set_send_friend_request(from_user_id, to_user_id):
+    def set_send_friend_request(from_user_id, to_user_id,user_name):
         event = {
             'event_number': 6,
             'info': {
                 'user_id': from_user_id,
+				'user_name': user_name,
                 'to_user_id': to_user_id
             },
             'timestamp': datetime.timestamp(datetime.utcnow())
@@ -296,17 +298,18 @@ class Events():
 
     async def has_friend_request(self, event):
         try:
-            await self.game.broker.publish(event, ('user', event['user_id']))
+            await self.game.broker.publish([event], ('user', event['info']['user_id']))
         except KeyError:
             pass
 
     @staticmethod
-    def set_has_friend_request(user_id, from_user_id):
+    def set_has_friend_request(user_id, from_user_id,from_user_name):
         event = {
             'event_number': 7,
             'info': {
                 'user_id': user_id,
-                'from_user_id': from_user_id
+                'from_user_id': from_user_id,
+				'from_user_name': from_user_name
             },
             'timestamp': datetime.timestamp(datetime.utcnow())
         }
@@ -314,17 +317,20 @@ class Events():
 
     async def ack_friend_request(self, event):
         try:
-            await self.game.broker.publish(event, ('user', event['info']['user_id']))
+            await self.game.broker.publish([event], ('user', event['info']['user_id']))
+            if(event['info']['answer']):
+                await db.add_friend(event['info']['user_id'],event['info']['from_user_id'])
         except KeyError:
             pass
 
     @staticmethod
-    def set_ack_friend_request(user_id, from_user_id, answer):
+    def set_ack_friend_request(user_id, from_user_id,from_user_name, answer):
         event = {
             'event_number': 8,
             'info': {
                 "user_id": user_id,
                 'from_user_id': from_user_id,
+                'from_user_name': from_user_name,
                 'answer': answer
             },
             'timestamp': datetime.timestamp(datetime.utcnow())
@@ -333,7 +339,7 @@ class Events():
 
     async def toggle_ready(self, event):
         self.game.players[event['info']['is_ready']] = event['info']['is_ready']
-        self.game.broker.publish(event, ('broadcast', None))
+        await self.game.broker.publish([event], ('broadcast', None))
 
     @staticmethod
     def set_toggle_ready(user_id, is_ready):

@@ -173,7 +173,7 @@ async def leave_user_from_room(user_id, room_id):
         result = await db.rooms.update_one({'_id': ObjectId(room_id)}, {'$set': {'admin': None, 'users': []}})
     elif room_info['admin'] == ObjectId(user_id):
         result = await db.rooms.update_one({'_id': ObjectId(room_id)}, {"$pull": {"users": {"_id": ObjectId(user_id)}},
-                                                                        '$set': {'admin': room_info['users'][1]}})
+                                                                        '$set': {'admin': room_info['users'][1]['_id']}})
     else:
         result = await db.rooms.update_one({'_id': ObjectId(room_id)}, {"$pull": {"users": {"_id": ObjectId(user_id)}}})
 
@@ -192,17 +192,31 @@ async def get_user_profile(user_id):
         raise DbError('User profile Counldt find.')
 
 
-async def add_friend(user_id, friend_id, avatar):
-    friend = await db.users.find_one({"_id": ObjectId(friend_id)}, {"username": 1})
-    data = {
-        '_id': ObjectId(friend_id),
-        'avatar': avatar,
-        'username': friend['username'],
+async def add_friend(user1, user2):
+    user1_info = await db.users.find_one({"_id": ObjectId(user1)})
+    user2_info = await db.users.find_one({"_id": ObjectId(user2)})
+    data1 = {
+        "_id":ObjectId(user2),
+        "avatar":user2_info['avatar'],
+        "username":user2_info['username'],
         'last_opened': datetime.timestamp(datetime.utcnow()),
-        'messages': []
+        'messages':[],
     }
-    result = await db.users.update_one({'_id': ObjectId(user_id)}, {'$push': {'friends': data}})
-    if result.modified_count == 1:
+    data2 = {
+        "_id": ObjectId(user1),
+        "avatar": user1_info['avatar'],
+        "username": user1_info['username'],
+        'last_opened': datetime.timestamp(datetime.utcnow()),
+        'messages': [],
+    }
+    request = [
+        UpdateOne({"_id":ObjectId(user1)},{"$push":{"friends":data1}}),
+        UpdateOne({"_id": ObjectId(user2)}, {"$push": {"friends": data2}}),
+
+    ]
+    result = await db.users.bulk_write(request)
+
+    if result.modified_count == 2:
         return result
     else:
         raise DbError('Couldnt Add friend.')

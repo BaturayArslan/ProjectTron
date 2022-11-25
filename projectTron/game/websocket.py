@@ -33,7 +33,7 @@ async def join_room(room_id,user):
 
     except CheckFailed as e:
         await db.leave_user_from_room(user['user_id'],room_id)
-        return jsonify({"status": "error", "message": f"{str(e)}"}), 500
+        raise e
 
 
 async def leave_room(user,room_id):
@@ -62,14 +62,13 @@ async def ws(room_id):
         receive_task,send_task = await game.register(user['user_claims']['user_id'],user['user_claims']['user_name'],websocket)
         await receive_task
         await send_task
-    except asyncio.CancelledError as e:
+    except (Exception,asyncio.CancelledError) as e:
         # Clean up when user disconnect.
         print('clean up ')
         await leave_room(user,room_id)
         await game.disconnect(user['user_claims']['user_id'],user['user_claims']['user_name'])
         await _cancel_task((receive_task,send_task),raise_exp=True)
-        raise
-
+        raise e 
 
 
 async def _cancel_task(tasks,raise_exp=False):
