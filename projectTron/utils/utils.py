@@ -1,5 +1,5 @@
 import json
-
+import math
 from bson import ObjectId
 from collections.abc import Iterable
 import decimal
@@ -73,3 +73,17 @@ def parse_redis_stream_event(events):
         parsed_event = json.loads(event[1][b'container'])
         result.append(parsed_event)
     return result
+
+def bezier(t,p0,p1,p2,p3):
+    cX = 3 * (p1['x'] - p0['x'])
+    bX = 3 * (p2['x'] - p1['x']) - cX
+    aX = p3['x'] - p0['x'] - cX - bX
+
+    cY = 3 * (p1['y'] - p0['y'])
+    bY = 3 * (p2['y'] - p1['y']) - cY
+    aY = p3['y'] - p0['y'] - cY - bY
+
+    x = aX * math.pow(t, 3) + bX * math.pow(t, 2) + cX * t + p0['x']
+    y = aY * math.pow(t, 3) + bY * math.pow(t, 2) + cY * t + p0['y']
+
+    return {'x':x,'y':y}

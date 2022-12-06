@@ -1,14 +1,21 @@
 import asyncio
 import json
 import async_timeout
+import math
 from quart import g, current_app
 from collections import defaultdict
 from datetime import datetime
-from projectTron.utils.utils import parse_redis_stream_event
+from projectTron.utils.utils import parse_redis_stream_event, bezier
 from projectTron import db
+from .player import Player
 
 
 class Game:
+    CYCLE_WIDTH = 50
+    CYCLE_HEIGHT = 20
+    CANVAS_WIDTH = 400
+    CANVAS_HEIGHT = 1200
+
     def __init__(self, room_id, data):
         self.players = {}
         self.connections = {}
@@ -17,16 +24,17 @@ class Game:
         self.pubsub = g.redis_connection.pubsub()
         self.broker = Broker(self)
         self.events = Events(self)
-        self.board = Board(self, 50, 50)
+        self.board = Board(self, Game.CANVAS_HEIGHT, Game.CANVAS_WIDTH)
         self._room_id = room_id
         self.max_user = data['max_user']
         self.max_round = data['max_point']
         self.current_round = 0
         self.is_in_round = False
         self.is_start = False
+        self.pause = True
         self.teams = defaultdict(list)
         self.break_time = 10
-        self.color_codes = ['Blue', 'Red', 'Green', 'Purple']
+        self.color_codes = ['Green', 'Red', 'Blue', 'Purple']
 
     async def register(self, player_id, user_name, websocket):
         self.connections[player_id] = {
@@ -46,15 +54,23 @@ class Game:
         return self.connections[player_id]['send_task'], self.connections[player_id]['receive_task']
 
     async def run(self):
+        interval = 1 / 60
+        broadcast_game = [{'event_number': 23}]
+        deltaTime = 0
         while True:
             try:
+                firtsTime = datetime.timestamp()
                 events = await self.broker.get_events()
                 await self.events(events)
-            except KeyError:
-                continue
+                if not self.pause:
+                    for user_id in self.players:
+                        self.players[user_id].update(deltaTime)
+                    await self.events(broadcast_game)
+                await asyncio.sleep(interval)
+                deltaTime = (firtsTime - datetime.timestamp()) * 1000
             except Exception as e:
                 # TODO change this later.
-                continue
+                print(repr(e), str(e))
 
     def _create_send_task(self, player, player_id):
         async def task_fnc(*args, **kwargs):
@@ -78,7 +94,6 @@ class Game:
                 raise
 
         return asyncio.create_task(task_fnc(player=player, player_id=player_id))
-	
 
     async def disconnect(self, player_id, user_name):
         self.players.pop(player_id)
@@ -93,25 +108,25 @@ class Game:
 
     async def update_is_start(self, state):
         self.is_start = state
-        await db.change_is_start(self.is_start,self._room_id)
+        await db.change_is_start(self.is_start, self._room_id)
 
     async def remove_room(self):
         game_task = current_app.game_tasks[self._room_id]
         game_task.cancel()
-        await asyncio.gather(game_task,return_exceptions=True)
+        await asyncio.gather(game_task, return_exceptions=True)
         current_app.game_tasks.pop(self._room_id)
         current_app.games.pop(self._room_id)
 
     async def reset_game(self, winner):
         await db.increase_win(winner)
         for player_id in self.players:
-            self.players[player_id].update({'win_round': 0, 'is_ready': False})
+            self.players[player_id].reset()
         self.current_round = 0
         self.is_in_round = False
         self.is_start = False
         self.teams = defaultdict(list)
         self.break_time = 10
-        self.color_codes = ['Blue', 'Red', 'Green', 'Purple']
+        self.color_codes = ['Green', 'Red', 'Blue', 'Purple']
         self.board.clear_board()
 
 
@@ -135,11 +150,11 @@ class Broker():
 
     async def get_events(self):
         raw_events = await self.game.redis_connection.xread({self.game._room_id: self.last_event_id}, block=12000000)
-        self.last_event_id=raw_events[0][1][-1][0].decode('utf-8')
+        self.last_event_id = raw_events[0][1][-1][0].decode('utf-8')
         events = parse_redis_stream_event(raw_events)
         return events
 
-    async def push_event(self, event,id='*'):
+    async def push_event(self, event, id='*'):
         if type(event) != str:
             event = json.dumps(event)
         await self.game.redis_connection.xadd(self.game._room_id, {'container': event}, id=id, maxlen=50)
@@ -147,6 +162,13 @@ class Broker():
 
 class Events():
     EVENTS_LIST = [
+        (15, "move"),
+        (18, "clear_trace"),
+        (19, 'update_player'),
+        (20, "key_down"),
+        (21, "key_up"),
+        (22, 'togle_trace'),
+        (23, 'broadcast_game_state'),
         (1, 'player_join'),
         (2, 'player_leave'),
         (3, 'system_message'),
@@ -161,9 +183,8 @@ class Events():
         (12, "start_round"),
         (13, "end_round"),
         (14, "end_game"),
-        (15,"move"),
-        (16,"echo"),
-        (17,"get_room_info")
+        (16, "echo"),
+        (17, "get_room_info"),
     ]
 
     def __init__(self, game):
@@ -179,19 +200,12 @@ class Events():
                     await fnc(event)
 
     async def player_join(self, event):
-        self.game.players[event['info']['user_id']] = {
-            'user_id': event['info']['user_id'],
-            'user_name': event['info']['user_name'],
-            'color': event['info']['color'],
-            'win_round': event['info']['win_round'],
-            'is_ready': event['info']['is_ready'],
-            'join_time': event['timestamp'],
-            'avatar':event['info']['avatar']
-        }
+        self.game.players[event['info']['user_id']] = Player(event)
+
         result = [
             {
                 'event_number': 1,
-                'info': self.game.players
+                'info': [self.game.players[user_id].transform_to_dict() for user_id in self.game.players]
             },
             {
                 'event_number': 3,
@@ -212,7 +226,7 @@ class Events():
                 'win_round': 0,
                 'color': 1,
                 'is_ready': False,
-                'avatar':player_info['avatar']
+                'avatar': player_info['avatar']
             },
             'timestamp': datetime.timestamp(datetime.utcnow())
         }
@@ -232,8 +246,6 @@ class Events():
         ]
 
         await self.game.broker.publish(result, ('broadcast', None))
-
-
 
     @staticmethod
     def set_player_leave(user_id, user_name):
@@ -264,7 +276,9 @@ class Events():
         return event
 
     async def change_color(self, event):
-        self.game.players[event['info']['user_id']].update({"color": event['info']['color']})
+        user_id = event['info']['user_id']
+        new_color = event['info']['color']
+        self.game.players[user_id].color = new_color
         await self.game.broker.publish([event], ('broadcast', None))
 
     @staticmethod
@@ -280,16 +294,17 @@ class Events():
         return event
 
     async def send_friend_request(self, event):
-        result = Events.set_has_friend_request(event['info']['to_user_id'], event['info']['user_id'],event['info']['user_name'])
+        result = Events.set_has_friend_request(event['info']['to_user_id'], event['info']['user_id'],
+                                               event['info']['user_name'])
         await self.game.broker.push_event(result)
 
     @staticmethod
-    def set_send_friend_request(from_user_id, to_user_id,user_name):
+    def set_send_friend_request(from_user_id, to_user_id, user_name):
         event = {
             'event_number': 6,
             'info': {
                 'user_id': from_user_id,
-				'user_name': user_name,
+                'user_name': user_name,
                 'to_user_id': to_user_id
             },
             'timestamp': datetime.timestamp(datetime.utcnow())
@@ -303,13 +318,13 @@ class Events():
             pass
 
     @staticmethod
-    def set_has_friend_request(user_id, from_user_id,from_user_name):
+    def set_has_friend_request(user_id, from_user_id, from_user_name):
         event = {
             'event_number': 7,
             'info': {
                 'user_id': user_id,
                 'from_user_id': from_user_id,
-				'from_user_name': from_user_name
+                'from_user_name': from_user_name
             },
             'timestamp': datetime.timestamp(datetime.utcnow())
         }
@@ -318,13 +333,13 @@ class Events():
     async def ack_friend_request(self, event):
         try:
             await self.game.broker.publish([event], ('user', event['info']['user_id']))
-            if(event['info']['answer']):
-                await db.add_friend(event['info']['user_id'],event['info']['from_user_id'])
+            if (event['info']['answer']):
+                await db.add_friend(event['info']['user_id'], event['info']['from_user_id'])
         except KeyError:
             pass
 
     @staticmethod
-    def set_ack_friend_request(user_id, from_user_id,from_user_name, answer):
+    def set_ack_friend_request(user_id, from_user_id, from_user_name, answer):
         event = {
             'event_number': 8,
             'info': {
@@ -338,7 +353,9 @@ class Events():
         return event
 
     async def toggle_ready(self, event):
-        self.game.players[event['info']['is_ready']] = event['info']['is_ready']
+        user_id = event['info']['user_id']
+        new_state = event['info']['is_ready']
+        self.game.players[user_id].is_ready = new_state
         await self.game.broker.publish([event], ('broadcast', None))
 
     @staticmethod
@@ -355,32 +372,66 @@ class Events():
 
     async def start_game(self, event):
         # Check if loby in valid state.
-        if len(self.game.players) == 1 or len(self.game.players) == 0:
+        if len(self.game.players) <= 1:
             return None
-
         elif not await db.is_admin(event['info']['user_id'], self.game._room_id):
+            return None
+        elif self.game.is_start:
             return None
 
         for key in self.game.players:
-            if not self.game.players[key]['isready']:
+            if not self.game.players[key].is_ready:
                 return None
 
         # loby is in valid state set teams and game object
-        for key in self.game.players:
+        self.game.is_start = True
+        try:
+            await self.game.update_is_start(True)
+        except Exception as e:
+            self.game.is_start = False
+            return None
+
+        start_positions = []
+        red_team_counter = 0
+        blue_team_counter = 0
+        for index, key in enumerate(self.game.players):
+            # Calculate teams
             player = self.game.players[key]
-            self.game.teams[player['color']].append(player)
+            self.game.teams[player.color].append(player)
+            # Calculate Start Positions
+            if player.color == 1:
+                # Red Team
+                up_or_down = red_team_counter % 2
+                x = Game.CANVAS_WIDTH - Game.CYCLE_WIDTH
+                y = (Game.CANVAS_HEIGHT / 2) - (red_team_counter * Game.CYCLE_HEIGHT) if up_or_down == 0 else (
+                                                                                                                          Game.CANVAS_HEIGHT / 2) + (
+                                                                                                                          red_team_counter * Game.CYCLE_HEIGHT)
+                rotation = 180
+                player.set_start_position(x, y, rotation)
+                start_positions.append({'user_id': player.user_id, 'x': x, 'y': y, 'rotation': rotation})
+                red_team_counter += 1
+            else:
+                # Blue Team
+                up_or_down = blue_team_counter % 2
+                x = 0
+                y = (Game.CANVAS_HEIGHT / 2) - (blue_team_counter * Game.CYCLE_HEIGHT) if up_or_down == 0 else (
+                                                                                                                           Game.CANVAS_HEIGHT / 2) + (
+                                                                                                                           blue_team_counter * Game.CYCLE_HEIGHT)
+                rotation = 0
+                start_positions.append({'user_id': player.user_id, 'x': x, 'y': y, 'rotation': rotation})
+                blue_team_counter += 1
 
         for i in range(3, 0, -1):
             message = Events.set_system_message(f'After {i} second game will start.')
-            await self.game.broker.publish(message, ('broadcast', None))
+            await self.game.broker.publish([message], ('broadcast', None))
             await asyncio.sleep(1)
 
-        message = Events.set_system_message("GAME HAS BEGAN.")
-        try:
-            self.game.update_is_start(True)
-            await self.game.broker.publish(({'event_number': 10}, message), ('broadcast', None))
-        except Exception as e:
-            return None
+        event['info']['start_positions'] = start_positions
+        await self.game.broker.publish([event], ('broadcast', None))
+
+        message = Events.set_system_message(f'Round Gonna Start in {self.game.break_time}')
+        await self.game.broker.publish([message], ('broadcast', None))
+        await asyncio.sleep(self.game.break_time)
 
         await self.start_round()
 
@@ -405,7 +456,7 @@ class Events():
 
     async def get_game_state(self, event):
         event['info']['state'] = {
-            "players": self.game.players,
+            "players": [self.game.players['user_id'].transform_to_dict() for user_id in self.game.players],
             "is_start": self.game.is_start,
             'max_round': self.game.max_round,
             'max_user': self.game.max_user,
@@ -427,30 +478,28 @@ class Events():
             'timestamp': datetime.timestamp(datetime.utcnow())
         }
 
-    async def end_round(self, winner, looser):
+    async def end_round(self, winner):
         self.game.is_in_round = False
+        self.game.pause = True
         team = self.game.teams[winner]
         for player in team:
-            player['win_round'] += 1
+            player.win_round += 1
             if self.game.current_round > self.game.max_round:
                 return await self.end_game()
         event = {
             'event_number': 13,
             'info': {
-                "players": self.game.players,
-                "is_start": self.game.is_start,
-                'max_round': self.game.max_round,
-                'max_user': self.game.max_user,
-                'room_id': self.game._room_id,
-                'is_in_round': self.game.is_in_round,
-                'teams': self.game.teams,
-                'current_round': self.game.current_round
+                'winner_color': winner,
+                'winner_team': [player.transform_to_dict() for player in team]
             }
         }
+        message = Events.set_system_message(
+            f"Theee Winner iiiis {self.game.color_codes[winner]} Team!!")
+        await self.game.broker.publish([event, message], ('broadcast', None))
 
         message = Events.set_system_message(
             f"{self.game.current_round} is Finished.Next Round Gonna Start in {self.game.break_time}")
-        await self.game.broker.publish((event, message), ('broadcast', None))
+        await self.game.broker.publish([event, message], ('broadcast', None))
         await asyncio.sleep(self.game.break_time)
         await self.start_round()
 
@@ -458,16 +507,18 @@ class Events():
 
         for i in range(3, 0, -1):
             message = Events.set_system_message(f'After {i} second round  will start.')
-            await self.game.broker.publish(message, ('broadcast', None))
+            await self.game.broker.publish([message], ('broadcast', None))
             await asyncio.sleep(1)
 
         self.game.is_in_round = True
         self.game.current_round = self.game.current_round + 1
-        await db.update_round(self.game.current_round,self.game._room_id)
-        await self.game.broker.publish({"event_number": 12}, ('broadcast', None))
+        await db.update_round(self.game.current_round, self.game._room_id)
+        await self.game.broker.publish([{"event_number": 12}], ('broadcast', None))
 
         message = Events.set_system_message("Fight")
-        await self.game.broker.publish(message, ('broadcast', None))
+        await self.game.broker.publish([message], ('broadcast', None))
+
+        self.game.pause = False
 
     async def end_game(self):
         teams_point = []
@@ -476,86 +527,154 @@ class Events():
                                 self.game.teams[color_code]))
         teams_point.sort(key=lambda element: element[0])
 
-        message = Events.set_system_message(f"Team {teams_point[0][1]} Win The Game With {teams_point[0][0]}")
-        await self.game.broker.publish(message, ('broadcast', None))
+        message = Events.set_system_message(f"Team {teams_point[0][1]} Win The Game With {teams_point[0][0]} Point")
+        await self.game.broker.publish([message], ('broadcast', None))
 
         await asyncio.sleep(2)
 
         for i in range(3, 0, -1):
             message = Events.set_system_message(f'After {i} second game  will end.')
-            await self.game.broker.publish(message, ('broadcast', None))
+            await self.game.broker.publish([message], ('broadcast', None))
             await asyncio.sleep(1)
 
         self.game.reset_game(teams_point[0][2])
-        event = {
-            'event_number': 14,
-            'info': {
-                "players": self.game.players,
-                "is_start": self.game.is_start,
-                'max_round': self.game.max_round,
-                'max_user': self.game.max_user,
-                'room_id': self.game._room_id,
-                'is_in_round': self.game.is_in_round,
-                'teams': self.game.teams,
-                'current_round': self.game.current_round
-            }
-        }
-        await self.game.broker.publish(event, ('broadcast', None))
+        result = [
+            {
+                'event_number': 14,
+                'info': {
+                    "players": [self.game.players['user_id'].transform_to_dict() for user_id in self.game.players],
 
-    async def move(self,event):
-        if not self.game.is_start or not self.game.is_in_round:
-            return
+                }
+             },
+            await Events.set_get_room_info(self.game._room_id)
+        ]
+        await self.game.broker.publish([result], ('broadcast', None))
 
-        await self.game.board.set_point(event['info']['x'],event['info']['y'],event['info']['color'])
 
-        if self.game.is_start and self.game.is_in_round:
-            await self.game.broker.publish(event,('broadcast',None))
+
+    async def key_down(self, event):
+        user_id = event['info']['user_id']
+        key = event['info']['key']
+        player = self.game.players[user_id]
+        player.keys[key] = 0.01
 
     @staticmethod
-    def set_move(user_id,x,y,color):
+    def set_key_down(key, user_id):
         event = {
-            'event_number':15,
+            'event_number': 20,
             'info': {
-                'user_id':user_id,
-                'x':x,
-                'y':y,
-                'color':color
+                'user_id': user_id,
+                'key': key,
             }
         }
         return event
 
-    async def echo(self,event):
-        await self.game.broker.publish(event,('broadcast',None))
+    async def key_up(self, event):
+        user_id = event['info']['user_id']
+        key = event['info']['key']
+        player = self.game.players[user_id]
+        player.keys[key] = 0
+
+    @staticmethod
+    def set_key_up(key, user_id):
+        event = {
+            'event_number': 21,
+            'info': {
+                'user_id': user_id,
+                'key': key,
+            }
+        }
+        return event
+
+    async def toggle_trace(self, event):
+        user_id = event['info']['user_id']
+        player = self.game.players['user_id']
+        player.renderTile = False if player.renderTile else True
+
+    @staticmethod
+    def set_toggle_trace(user_id):
+        event = {
+            'event_number': 22,
+            'info': {
+                'user_id': user_id
+            }
+        }
+        return event
+
+    async def broadcast_game_state(self):
+        players_arr = [self.game.players[user_id].transform_to_dict() for user_id in self.game.players]
+        event = {
+            'event_number': 23,
+            'info': {
+                'players': players_arr
+            }
+        }
+        await self.game.broker.publish([event], ('broadcast', None))
+
+    @staticmethod
+    def set_broadcast_game_state():
+        event = {
+            'event_number': 23,
+            'info': {
+                'players': [{}, {}]
+            }
+        }
+        return event
+
+    async def echo(self, event):
+        await self.game.broker.publish(event, ('broadcast', None))
 
     async def get_room_info(self):
         event = await Events.set_get_room_info(self.game._room_id)
-        await self.game.broker.publish(event,('broadcast',None))
+        await self.game.broker.publish(event, ('broadcast', None))
 
     @staticmethod
     async def set_get_room_info(room_id):
         room_info = await db.find_room(room_id)
         event = {
-            'event_number':17,
-            'info':room_info
+            'event_number': 17,
+            'info': room_info
         }
         return event
+
 
 class Board:
     def __init__(self, game, rows, cols):
         self.game = game
         self._rows = rows
         self._cols = cols
-        self._map = [[0 for i in range(rows)] for j in range(cols)]
+        self._map = [[0 for i in range(cols)] for j in range(rows)]
 
     def clear_board(self):
         self._map = [[0 for i in range(self._rows)] for j in range(self._cols)]
 
-    async def set_point(self, x, y, color):
-        point = self._map[y][x]
-        if point == 0:
-            self._map[y][x] = color
-        else:
-            await self.collision_detected(point, color)
+    async def collision_detect(self, point_1, point_2, color,speed):
+        # Detect collision return false or true. if true run self.game.events.end_round if
+        slope = round((point_1['y'] - point_2['y']) / (point_1['x'] - point_2['x']))
+        # Detect if cycle hit own or another cycle's trace
+        for i in range(round(min(point_1['x'], point_2['x'])) + 1, round(max(point_1['x'], point_2['x']))):
+            y = slope * i - slope * point_2['x'] + point_2['y']
+            if self._map[y][i] == 0:
+                self._map[y][i] = color
+            else:
+                winner = 2 if color == 1 else 1
+                await self.game.events.end_round(winner)
+                return True
 
-    async def collision_detected(self, point, color):
-        await self.game.events.end_round(point,color)
+        # Detec if cycle Hits Game Area Borders
+        front_point_x = Game.CYCLE_WIDTH * math.sin((math.pi / 180) * point_1['rotation']) + point_1['x']
+        front_point_y = Game.CYCLE_WIDTH * math.sin((math.pi / 180) * point_1['rotation']) + point_1['y']
+        if (front_point_x > self._cols or front_point_x < 0 or front_point_y > self._rows or front_point_y < 0) and \
+                speed > 1.5:
+            winner = 2 if color == 1 else 1
+            await self.game.events.end_round(winner)
+            return True
+
+        return False
+
+    def clear_trace(self, point_1, point_2):
+        slope = round((point_2['y'] - point_1['y']) / (point_2['x'] - point_1['x']))
+        for i in range(round(min(point_1['x'], point_2['x'])) + 1, round(max(point_1['x'], point_2['x']))):
+            y = slope * i - slope * point_2['x'] + point_2['y']
+            self._map[y][i] = 0
+        self._map[point_1['y']][point_1['x']] = 0
