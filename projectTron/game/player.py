@@ -43,21 +43,23 @@ class Player(User):
         self.tiles = []
         self.keys = {'w': 0, 'a': 0, 's': 0, 'd': 0}
 
-    def update(self, deltaTime):
+    async def update(self, deltaTime):
         if(self.keys['w'] != 0 and self.speed <= self.maxSpeed):
             self.keys['w'] += deltaTime
+            if(self.keys['w'] > 2000):
+                self.keys['w'] = 2000
             t = (1/2000) * self.keys['w']
             self.speed += bezier(
                     t,
-                    { "x": 0, "y": 1 },
-                    { "x": 0, "y": 1 },
                     { "x": 0, "y": 0 },
-                    { "x": 1, "y": 0 }
+                    { "x": 0, "y": 0 },
+                    { "x": 0, "y": 1 },
+                    { "x": 1, "y": 1 }
                 )['y'] / 12
         elif(self.keys['s'] != 0 and self.speed > 0):
             self.keys['s'] += deltaTime
             t = (1/1000) * self.keys['s']
-            self.speed += bezier(
+            self.speed -= bezier(
                     t,
                     { "x": 0, "y": 1 },
                     { "x": 0, "y": 1 },
@@ -74,7 +76,8 @@ class Player(User):
         elif(self.keys['d'] != 0):
             self.rotationAngle += 4
 
-        self.calculateTrace()
+        await self.calculateTrace()
+
 
         for tile in self.tiles:
             tile.update(deltaTime)
@@ -84,18 +87,22 @@ class Player(User):
         self.y += self.speed * math.sin((math.pi / 180) * self.rotationAngle)
 
 
-    def calculateTrace(self):
+    async def calculateTrace(self):
         self.deltaX += abs(self.speed * math.cos((math.pi/180) * self.rotationAngle))
         self.deltaY += abs(self.speed * math.sin((math.pi/180) * self.rotationAngle))
         distance = math.sqrt(self.deltaX**2 + self.deltaY**2)
         if (distance > Tile.DISTANCE_BETWEEN and self.renderTile):
             x = math.cos(math.pi + (math.pi / 180) * self.rotationAngle) * (self.width / 2) + (self.x + self.width / 2)
             y = math.sin(math.pi + (math.pi / 180) * self.rotationAngle) * (self.width / 2) + (self.y + self.height / 2)
-            # Detect if this tile cause any collision
-            self.game.board.collision_detect({'x':x,'y':y},
-                                             {'x':self.tiles[-1].x,'y':self.tiles[-1].y},
-                                             self.color,self.speed)
+
             self.tiles.append(Tile(self,x,y,self.color))
+
+            # Detect if this tile cause any collision
+            if(len(self.tiles) > 1):
+                await self.game.board.collision_detect({'x':x,'y':y,'rotation':self.rotationAngle},
+                                                 {'x':self.tiles[-2].x,'y':self.tiles[-2].y,'rotation':self.rotationAngle},
+                                                 self.color)
+
             self.deltaX = 0
             self.deltaY = 0
 
@@ -103,14 +110,17 @@ class Player(User):
         self.x = x
         self.y = y
         self.rotationAngle = rotationAngle
+        self.start_x = x
+        self.start_y = y
+        self.start_rotationAngle = rotationAngle
 
     def reset(self):
-        self.x = 0
-        self.y = 0
-        self.rotationAngle = 0
+        self.x = self.start_x
+        self.y = self.start_y
+        self.rotationAngle = self.start_rotationAngle
         self.speed = 0
         self.deltaX = 0
-        self.deltaX = 0
+        self.deltaY = 0
         self.renderTile = True
         self.tiles = []
         self.is_ready = False
@@ -124,11 +134,14 @@ class Player(User):
             'renderTile': self.renderTile,
             'user_id': self.user_id,
             'user_name': self.user_name,
+            'maxSpeed':self.maxSpeed,
             'color': self.color,
             'win_round': self.win_round,
             'join_time': self.join_time,
             'is_ready': self.is_ready,
             'avatar': self.avatar,
+            'height':self.height,
+            'width':self.width,
             'tiles':[tile.transform_to_dict() for tile in self.tiles]
         }
 
@@ -142,11 +155,11 @@ class Tile:
         self.y = y
         self.color = color
         self.lifeTime = 0
-        self.maxLifeTime = 5000
+        self.maxLifeTime = 3500
         self.isGonnaDelete = False
 
     def update(self,deltaTime):
-        if (self.lifeTime > self.maxLifeTime):
+        if (self.lifeTime > self.maxLifeTime and len(self.player.tiles) > 1):
             self.player.game.board.clear_trace({'x':self.x,'y':self.y},
                                                {'x':self.player.tiles[1].x,'y':self.player.tiles[1].y})
             self.isGonnaDelete = True

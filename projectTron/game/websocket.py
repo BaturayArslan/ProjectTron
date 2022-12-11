@@ -65,8 +65,9 @@ async def ws(room_id):
     except (Exception,asyncio.CancelledError) as e:
         # Clean up when user disconnect.
         print('clean up ')
-        await leave_room(user,room_id)
-        await game.disconnect(user['user_claims']['user_id'],user['user_claims']['user_name'])
+        if(len(game.players) != 1):
+            await leave_room(user,room_id)
+            await game.disconnect(user['user_claims']['user_id'],user['user_claims']['user_name'])
         await _cancel_task((receive_task,send_task),raise_exp=True)
         raise e 
 

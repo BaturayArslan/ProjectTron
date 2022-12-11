@@ -309,7 +309,7 @@ async def change_is_start(state, room_id):
 
 
 async def increase_win(winner):
-    request = [UpdateOne({'_id': ObjectId(player['user_id'])}, {'$inc': {'total_win': 1}}) for player in winner]
+    request = [UpdateOne({'_id': ObjectId(player.user_id)}, {'$inc': {'total_win': 1}}) for player in winner]
     if len(request) != 0:
         await db.users.bulk_write(request)
 
@@ -328,7 +328,7 @@ async def complete_login(data, email):
     if result.modified_count == 1:
         return True
     else:
-        DbError('Couldn Complete Login')
+        raise DbError('Couldn Complete Login')
 
 
 async def update_round(round, room_id):
@@ -336,7 +336,7 @@ async def update_round(round, room_id):
     if result.modified_count == 1:
         return True
     else:
-        DbError('Couldnt Update current_round')
+        raise DbError('Couldnt Update current_round')
 
 
 async def update_last_opened(user_id, friend_id):
@@ -348,4 +348,11 @@ async def update_last_opened(user_id, friend_id):
     if result.modified_count == 1:
         return timestamp
     else:
-        DbError('Couldn Update last_opened')
+        raise DbError('Couldn Update last_opened')
+
+async def reset_room(room_id):
+    result = await db.rooms.update_one({'_id':ObjectId(room_id)},{'$set':{'status.current_round':0,'status.is_start':False,}})
+    if result.modified_count == 1:
+        return True
+    else:
+        raise DbError('Couldn Update last_opened')

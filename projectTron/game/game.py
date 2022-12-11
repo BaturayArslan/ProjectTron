@@ -1,5 +1,7 @@
 import asyncio
 import json
+import traceback
+
 import async_timeout
 import math
 from quart import g, current_app
@@ -13,8 +15,8 @@ from .player import Player
 class Game:
     CYCLE_WIDTH = 50
     CYCLE_HEIGHT = 20
-    CANVAS_WIDTH = 400
-    CANVAS_HEIGHT = 1200
+    CANVAS_WIDTH = 1200
+    CANVAS_HEIGHT = 400
 
     def __init__(self, room_id, data):
         self.players = {}
@@ -34,6 +36,7 @@ class Game:
         self.pause = True
         self.teams = defaultdict(list)
         self.break_time = 10
+        self.interval = 1/60
         self.color_codes = ['Green', 'Red', 'Blue', 'Purple']
 
     async def register(self, player_id, user_name, websocket):
@@ -54,23 +57,44 @@ class Game:
         return self.connections[player_id]['send_task'], self.connections[player_id]['receive_task']
 
     async def run(self):
-        interval = 1 / 60
-        broadcast_game = [{'event_number': 23}]
-        deltaTime = 0
-        while True:
-            try:
-                firtsTime = datetime.timestamp()
-                events = await self.broker.get_events()
-                await self.events(events)
-                if not self.pause:
-                    for user_id in self.players:
-                        self.players[user_id].update(deltaTime)
-                    await self.events(broadcast_game)
-                await asyncio.sleep(interval)
-                deltaTime = (firtsTime - datetime.timestamp()) * 1000
-            except Exception as e:
-                # TODO change this later.
-                print(repr(e), str(e))
+        try:
+            game_loop_task = self._create_game_loop_task()
+            while True:
+                try:
+                    events = await self.broker.get_events()
+                    await self.events(events)
+                except Exception as e:
+                    # TODO change this later.
+                    print(traceback.format_exc())
+        except asyncio.CancelledError as e:
+            game_loop_task.cancel()
+            raise
+
+    async def _run_game_loop(self):
+        try:
+            broadcast_game = [{'event_number': 23}]
+            deltaTime = 0
+            milisecond = 0
+            frameCounter = 0
+            while True:
+                try:
+                    firtsTime = datetime.timestamp(datetime.utcnow())
+                    if(not self.pause):
+                        for user_id in self.players:
+                            await self.players[user_id].update(deltaTime)
+                        await self.events(broadcast_game)
+                    await asyncio.sleep(self.interval)
+                    deltaTime = (datetime.timestamp(datetime.utcnow()) - firtsTime) * 1000
+                    milisecond += deltaTime
+                    frameCounter += 1
+                    if (milisecond > 1000):
+                        print(frameCounter)
+                        milisecond = 0
+                        frameCounter = 0
+                except Exception as e :
+                    print(traceback.format_exc())
+        except asyncio.CancelledError as e :
+            raise
 
     def _create_send_task(self, player, player_id):
         async def task_fnc(*args, **kwargs):
@@ -95,12 +119,41 @@ class Game:
 
         return asyncio.create_task(task_fnc(player=player, player_id=player_id))
 
+    def _create_game_loop_task(self):
+        return asyncio.create_task(self._run_game_loop())
+
     async def disconnect(self, player_id, user_name):
         self.players.pop(player_id)
         self.connections.pop(player_id)
 
         player_disconnect_event = Events.set_player_leave(player_id, user_name)
         await self.broker.push_event(player_disconnect_event)
+
+        if(len(self.players) <= 1 and self.is_start):
+            await self.close_game()
+
+    async def close_game(self):
+
+        game_task = current_app.game_tasks[self._room_id]
+        game_task.cancel()
+        await asyncio.gather(game_task, return_exceptions=True)
+
+        for i in range(3, 0, -1):
+            message = Events.set_system_message(f'This room gonna close after {i} second !!')
+            await self.broker.publish([message], ('broadcast', None))
+            await asyncio.sleep(1)
+
+        message = Events.set_system_message('GoodBye User...')
+        await self.broker.publish([message], ('broadcast', None))
+
+        for user_id in self.players:
+                await self.connections[user_id]["send_que"].put(json.dumps([{'event_number':666}]))
+        try:
+            await db.delete_room(self._room_id)
+        except Exception as e :
+            pass
+        current_app.game_tasks.pop(self._room_id)
+        current_app.games.pop(self._room_id)
 
     async def set_pubsub(self):
         if not self.pubsub.subscribed:
@@ -110,17 +163,13 @@ class Game:
         self.is_start = state
         await db.change_is_start(self.is_start, self._room_id)
 
-    async def remove_room(self):
-        game_task = current_app.game_tasks[self._room_id]
-        game_task.cancel()
-        await asyncio.gather(game_task, return_exceptions=True)
-        current_app.game_tasks.pop(self._room_id)
-        current_app.games.pop(self._room_id)
 
     async def reset_game(self, winner):
         await db.increase_win(winner)
+        await db.reset_room(self._room_id)
         for player_id in self.players:
             self.players[player_id].reset()
+            self.players[player_id].win_round = 0
         self.current_round = 0
         self.is_in_round = False
         self.is_start = False
@@ -149,7 +198,7 @@ class Broker():
             await self.game.connections[value]['send_que'].put(event)
 
     async def get_events(self):
-        raw_events = await self.game.redis_connection.xread({self.game._room_id: self.last_event_id}, block=12000000)
+        raw_events = await self.game.redis_connection.xread({self.game._room_id: self.last_event_id},block=12000000)
         self.last_event_id = raw_events[0][1][-1][0].decode('utf-8')
         events = parse_redis_stream_event(raw_events)
         return events
@@ -162,13 +211,10 @@ class Broker():
 
 class Events():
     EVENTS_LIST = [
-        (15, "move"),
-        (18, "clear_trace"),
-        (19, 'update_player'),
+        (23, 'broadcast_game_state'),
         (20, "key_down"),
         (21, "key_up"),
-        (22, 'togle_trace'),
-        (23, 'broadcast_game_state'),
+        (22, 'toggle_trace'),
         (1, 'player_join'),
         (2, 'player_leave'),
         (3, 'system_message'),
@@ -200,7 +246,7 @@ class Events():
                     await fnc(event)
 
     async def player_join(self, event):
-        self.game.players[event['info']['user_id']] = Player(event)
+        self.game.players[event['info']['user_id']] = Player(self.game,event)
 
         result = [
             {
@@ -236,7 +282,7 @@ class Events():
         result = [
             {
                 'event_number': 2,
-                'info': self.game.players
+                'info': [self.game.players[user_id].transform_to_dict() for user_id in self.game.players]
             },
             {
                 'event_number': 3,
@@ -407,8 +453,8 @@ class Events():
                                                                                                                           Game.CANVAS_HEIGHT / 2) + (
                                                                                                                           red_team_counter * Game.CYCLE_HEIGHT)
                 rotation = 180
-                player.set_start_position(x, y, rotation)
-                start_positions.append({'user_id': player.user_id, 'x': x, 'y': y, 'rotation': rotation})
+                player.set_start_position(x - 16, y, rotation)
+                start_positions.append({'user_id': player.user_id, 'x': x - 16, 'y': y, 'rotation': rotation})
                 red_team_counter += 1
             else:
                 # Blue Team
@@ -418,7 +464,8 @@ class Events():
                                                                                                                            Game.CANVAS_HEIGHT / 2) + (
                                                                                                                            blue_team_counter * Game.CYCLE_HEIGHT)
                 rotation = 0
-                start_positions.append({'user_id': player.user_id, 'x': x, 'y': y, 'rotation': rotation})
+                start_positions.append({'user_id': player.user_id, 'x': x + 16, 'y': y, 'rotation': rotation})
+                player.set_start_position(x + 16, y, rotation)
                 blue_team_counter += 1
 
         for i in range(3, 0, -1):
@@ -482,38 +529,48 @@ class Events():
         self.game.is_in_round = False
         self.game.pause = True
         team = self.game.teams[winner]
-        for player in team:
-            player.win_round += 1
-            if self.game.current_round > self.game.max_round:
-                return await self.end_game()
         event = {
             'event_number': 13,
             'info': {
                 'winner_color': winner,
-                'winner_team': [player.transform_to_dict() for player in team]
+                'players': [self.game.players[user_id].transform_to_dict() for user_id in self.game.players]
             }
         }
         message = Events.set_system_message(
             f"Theee Winner iiiis {self.game.color_codes[winner]} Team!!")
         await self.game.broker.publish([event, message], ('broadcast', None))
 
+        for player in team:
+            player.win_round += 1
+            if self.game.current_round == self.game.max_round:
+                return await self.end_game()
+
         message = Events.set_system_message(
             f"{self.game.current_round} is Finished.Next Round Gonna Start in {self.game.break_time}")
-        await self.game.broker.publish([event, message], ('broadcast', None))
+        await self.game.broker.publish([message], ('broadcast', None))
         await asyncio.sleep(self.game.break_time)
         await self.start_round()
 
     async def start_round(self):
+
+        # position players at them start posiitons
+        for user_id in self.game.players:
+            self.game.players[user_id].reset()
+
+        self.game.board._map = [[0 for i in range(Game.CANVAS_WIDTH)] for j in range(Game.CANVAS_HEIGHT)]
+
+        # After this event fired game will start after 3 second.
+        await self.game.broker.publish([{"event_number": 12}], ('broadcast', None))
 
         for i in range(3, 0, -1):
             message = Events.set_system_message(f'After {i} second round  will start.')
             await self.game.broker.publish([message], ('broadcast', None))
             await asyncio.sleep(1)
 
+
         self.game.is_in_round = True
         self.game.current_round = self.game.current_round + 1
         await db.update_round(self.game.current_round, self.game._room_id)
-        await self.game.broker.publish([{"event_number": 12}], ('broadcast', None))
 
         message = Events.set_system_message("Fight")
         await self.game.broker.publish([message], ('broadcast', None))
@@ -523,9 +580,9 @@ class Events():
     async def end_game(self):
         teams_point = []
         for color_code in self.game.teams:
-            teams_point.append((self.game.teams[color_code][0]['win_round'], self.game.color_codes[color_code],
+            teams_point.append((self.game.teams[color_code][0].win_round, self.game.color_codes[color_code],
                                 self.game.teams[color_code]))
-        teams_point.sort(key=lambda element: element[0])
+        teams_point.sort(key=lambda element: element[0],reverse=True)
 
         message = Events.set_system_message(f"Team {teams_point[0][1]} Win The Game With {teams_point[0][0]} Point")
         await self.game.broker.publish([message], ('broadcast', None))
@@ -537,18 +594,18 @@ class Events():
             await self.game.broker.publish([message], ('broadcast', None))
             await asyncio.sleep(1)
 
-        self.game.reset_game(teams_point[0][2])
+        await self.game.reset_game(teams_point[0][2])
         result = [
             {
                 'event_number': 14,
                 'info': {
-                    "players": [self.game.players['user_id'].transform_to_dict() for user_id in self.game.players],
+                    "players": [self.game.players[user_id].transform_to_dict() for user_id in self.game.players],
 
                 }
              },
             await Events.set_get_room_info(self.game._room_id)
         ]
-        await self.game.broker.publish([result], ('broadcast', None))
+        await self.game.broker.publish(result, ('broadcast', None))
 
 
 
@@ -588,7 +645,7 @@ class Events():
 
     async def toggle_trace(self, event):
         user_id = event['info']['user_id']
-        player = self.game.players['user_id']
+        player = self.game.players[user_id]
         player.renderTile = False if player.renderTile else True
 
     @staticmethod
@@ -601,7 +658,7 @@ class Events():
         }
         return event
 
-    async def broadcast_game_state(self):
+    async def broadcast_game_state(self,event):
         players_arr = [self.game.players[user_id].transform_to_dict() for user_id in self.game.players]
         event = {
             'event_number': 23,
@@ -646,35 +703,50 @@ class Board:
         self._map = [[0 for i in range(cols)] for j in range(rows)]
 
     def clear_board(self):
-        self._map = [[0 for i in range(self._rows)] for j in range(self._cols)]
+        self._map = [[0 for i in range(self._cols)] for j in range(self._rows)]
 
-    async def collision_detect(self, point_1, point_2, color,speed):
-        # Detect collision return false or true. if true run self.game.events.end_round if
-        slope = round((point_1['y'] - point_2['y']) / (point_1['x'] - point_2['x']))
-        # Detect if cycle hit own or another cycle's trace
-        for i in range(round(min(point_1['x'], point_2['x'])) + 1, round(max(point_1['x'], point_2['x']))):
-            y = slope * i - slope * point_2['x'] + point_2['y']
-            if self._map[y][i] == 0:
-                self._map[y][i] = color
-            else:
+    async def collision_detect(self, point_1, point_2, color):
+        try:
+            # Detec if cycle Hits Game Area Borders
+            front_point_x = Game.CYCLE_WIDTH * math.cos((math.pi / 180) * point_1['rotation']) + point_1['x']
+            front_point_y = Game.CYCLE_WIDTH * math.sin((math.pi / 180) * point_1['rotation']) + point_1['y']
+            if front_point_x >= self._cols or front_point_x <= 0 or front_point_y >= self._rows or front_point_y <= 0 :
                 winner = 2 if color == 1 else 1
                 await self.game.events.end_round(winner)
                 return True
 
-        # Detec if cycle Hits Game Area Borders
-        front_point_x = Game.CYCLE_WIDTH * math.sin((math.pi / 180) * point_1['rotation']) + point_1['x']
-        front_point_y = Game.CYCLE_WIDTH * math.sin((math.pi / 180) * point_1['rotation']) + point_1['y']
-        if (front_point_x > self._cols or front_point_x < 0 or front_point_y > self._rows or front_point_y < 0) and \
-                speed > 1.5:
+            slope = round((point_1['y'] - front_point_y) / (point_1['x'] - front_point_x))
+            # Detect if cycle hit own or another cycle's trace
+            for i in range(round(min(point_1['x'], front_point_x)) + 1, round(max(point_1['x'], front_point_x))):
+                y = round(slope * i - slope * point_1['x'] + point_1['y'])
+                if self._map[y][i] != 0:
+                    winner = 2 if color == 1 else 1
+                    await self.game.events.end_round(winner)
+                    return True
+
+            slope_2 = round((point_1['y'] - point_2['y']) / (point_1['x'] - point_2['x']))
+            for i in range(round(min(point_1['x'], point_2['x'])) + 1, round(max(point_1['x'], point_2['x']))):
+                y = round(slope_2 * i - slope_2 * point_1['x'] + point_1['y'])
+                self._map[y][i] = color
+
+            return False
+
+        except IndexError as e :
+            print(traceback.format_exc())
             winner = 2 if color == 1 else 1
             await self.game.events.end_round(winner)
             return True
 
-        return False
 
     def clear_trace(self, point_1, point_2):
-        slope = round((point_2['y'] - point_1['y']) / (point_2['x'] - point_1['x']))
-        for i in range(round(min(point_1['x'], point_2['x'])) + 1, round(max(point_1['x'], point_2['x']))):
-            y = slope * i - slope * point_2['x'] + point_2['y']
-            self._map[y][i] = 0
-        self._map[point_1['y']][point_1['x']] = 0
+        try:
+            slope = round((point_2['y'] - point_1['y']) / (point_2['x'] - point_1['x']))
+            for i in range(round(min(point_1['x'], point_2['x'])) + 1, round(max(point_1['x'], point_2['x']))):
+                y = round(slope * i - slope * point_2['x'] + point_2['y'])
+                self._map[y][i] = 0
+            self._map[round(point_1['y'])][round(point_1['x'])] = 0
+        except ZeroDivisionError as e:
+            for i in range(round(min(point_1['y'], point_2['y'])) + 1, round(max(point_1['y'], point_2['y']))):
+                self._map[i][round(point_1['x'])] = 0
+            self._map[round(point_1['y'])][round(point_1['x'])] = 0
+            print(traceback.format_exc())
