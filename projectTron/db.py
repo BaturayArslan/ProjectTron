@@ -161,7 +161,7 @@ async def join_user_to_room(user_id, room_id, room_info=None):
     if result.modified_count == 1:
         return result
     else:
-        raise UserJoinRoomFailed('Couldnt Joing User To Room.')
+        raise DbError('Couldnt Joing User To Room.')
 
 
 async def leave_user_from_room(user_id, room_id):

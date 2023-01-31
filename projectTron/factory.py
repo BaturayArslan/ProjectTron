@@ -1,15 +1,14 @@
-import asyncio
-
 import quart.flask_patch
+import asyncio
 from pathlib import Path
+from collections import defaultdict
+
 from quart import Quart, jsonify,g,current_app,url_for,redirect,request
 from quart_jwt_extended import JWTManager,get_raw_jwt,jwt_required,verify_jwt_in_request,get_jwt_claims
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError
-from collections import defaultdict
 from quart_cors import cors
 import aioredis
-import redis.asyncio as redis
 
 from .auth.auth import auth_bp, oauth_bp
 from .rooms.rooms import rooms_bp

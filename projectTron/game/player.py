@@ -100,8 +100,8 @@ class Player(User):
             # Detect if this tile cause any collision
             if(len(self.tiles) > 1):
                 await self.game.board.collision_detect({'x':x,'y':y,'rotation':self.rotationAngle},
-                                                 {'x':self.tiles[-2].x,'y':self.tiles[-2].y,'rotation':self.rotationAngle},
-                                                 self.color)
+                                                 	   {'x':self.tiles[-2].x,'y':self.tiles[-2].y,'rotation':self.rotationAngle},
+                                                 	   self.color)
 
             self.deltaX = 0
             self.deltaY = 0
