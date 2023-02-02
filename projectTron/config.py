@@ -30,5 +30,5 @@ class TestConfig(BaseConfig):
     #SERVER_NAME= 'draw.hbarslan.com'
     FACEBOOK_CONSUMER_KEY= os.getenv('FACEBOOK_CONSUMER_KEY')
     FACEBOOK_CONSUMER_SECRET= os.getenv('FACEBOOK_CONSUMER_SECRET')
-    REDIS_URL = 'redis://ec2-3-250-153-214.eu-west-1.compute.amazonaws.com'
+    REDIS_URL = 'redis://127.0.0.1'
     REDIS_PASSWORD = os.getenv('REDIS')

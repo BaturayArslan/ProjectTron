@@ -75,8 +75,6 @@ class Game:
 		try:
 			broadcast_game = [{'event_number': 23}]
 			deltaTime = 0
-			milisecond = 0
-			frameCounter = 0
 			while True:
 				try:
 					firtsTime = datetime.timestamp(datetime.utcnow())
@@ -86,12 +84,6 @@ class Game:
 						await self.events(broadcast_game)
 					await asyncio.sleep(self.interval)
 					deltaTime = (datetime.timestamp(datetime.utcnow()) - firtsTime) * 1000
-					milisecond += deltaTime
-					frameCounter += 1
-					if (milisecond > 1000):
-						print(frameCounter)
-						milisecond = 0
-						frameCounter = 0
 				except Exception as e:
 					print(traceback.format_exc())
 		except asyncio.CancelledError as e:

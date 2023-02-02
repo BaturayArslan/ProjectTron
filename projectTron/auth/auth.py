@@ -184,14 +184,14 @@ async def authorize():
             user_claims ={'user_id':str(user['_id']),'user_name':user['username']}
         )
         result = await db.create_login_session(refresh_token, user['email'], user['_id'])
-        return redirect("https://" + current_app.config['SERVER_NAME'] + f"/static/token.html?auth_token={access_token}&refresh_token={refresh_token}")
+        return redirect("https://" + "tron.hbarslan.com" + f"/static/token.html?auth_token={access_token}&refresh_token={refresh_token}")
     else:
         # User not registered before register and login user
         me.pop('id')
         register_result = await db.register_user(me)
         access_token = create_access_token(identity=me['email'])
         refresh_token = create_refresh_token(identity=me['email'])
-        return redirect("https://" + current_app.config['SERVER_NAME'] + f"/static/token.html?auth_token={access_token}&refresh_token={refresh_token}")
+        return redirect("https://" + "tron.hbarslan.com" + f"/static/token.html?auth_token={access_token}&refresh_token={refresh_token}")
 
 
 @oauth_bp.route('/complete',methods=['POST'])

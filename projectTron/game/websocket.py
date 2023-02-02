@@ -56,8 +56,8 @@ async def ws(room_id):
 		await redis.get_redis()
 
 		is_error = await join_room(room_id,user)
-		if(is_error):
-			return is_error
+		#if(is_error):
+			#return is_error
 		
 
 		game = current_app.games[room_id]
